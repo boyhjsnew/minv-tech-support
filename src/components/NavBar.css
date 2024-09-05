@@ -1,0 +1,129 @@
+.layout-navbar {
+  height: 4rem;
+  width: 100%;
+  background-color: #ffffff;
+  display: flex;
+  box-shadow: 0 3px 5px rgba(0, 0, 0, 0.02), 0 0 2px rgba(0, 0, 0, 0.05),
+    0 1px 4px rgba(0, 0, 0, 0.08);
+  position: fixed;
+  padding: 0 2rem;
+  z-index: 997;
+  top: 0;
+  left: 0;
+  box-sizing: border-box;
+}
+.ul-list-nav {
+  margin: 10px 0px;
+  list-style-type: none;
+  align-items: center;
+  display: flex;
+  padding: -0.5rem;
+  box-sizing: border-box;
+  background: #f8f9fa;
+  color: #495057;
+  padding: 0px 10px;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  justify-content: space-betweena;
+  justify-content: center;
+}
+.ul-list-nav li {
+  font-weight: 450;
+  color: #0069b4;
+  font-size: 13px;
+  /* width: 100%; */
+  padding: 8px 13px;
+  text-wrap: nowrap;
+  display: flex;
+  border-radius: 6px;
+  justify-content: space-between;
+  cursor: pointer;
+  box-sizing: border-box;
+  border: 1px solid #f8f9fa;
+}
+.i-user {
+  color: #6c757d;
+  font-size: 20px;
+  padding: 10px;
+  cursor: pointer;
+  background-color: #f0f1ff;
+  border-radius: 100%;
+  border: 2px solid #ffffff;
+}
+
+.ul-list-nav li:hover {
+  background-color: #ebebeb;
+  transition: 0.3s;
+  /* border: 1px solid #6366f1; */
+}
+.link {
+  text-decoration: none;
+  color: #0069b4;
+}
+.ul-list-nav li:hover .link {
+  color: #6366f1;
+  transition: 0.3s;
+}
+.ul-list-nav li.active {
+  background-color: #ebebeb76;
+  border: 1px solid #6365f151;
+}
+/* .ul-list-nav li.active:hover {
+  color: #6365f151;
+} */
+.i-user:hover {
+  transition: 0.3s;
+  color: #495057;
+  border-radius: 15%;
+  color: #6366f1;
+  border: 2px solid #6366f1;
+}
+.menu_profile {
+  top: 41px;
+  right: 0;
+  position: absolute;
+  background-color: #ffffff;
+  width: 150px;
+  border-radius: 8%;
+  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+.list-profile li {
+  list-style-type: none;
+  color: #6c757d;
+  font-weight: 300;
+  line-height: 2;
+  font-size: 14px;
+}
+.separator {
+  border-top: 1px solid #dee2e6;
+  margin: 0.2rem 0;
+}
+.p-item-menu {
+  padding: 0.3rem 1.25rem;
+  color: #495057df;
+  border-radius: 0;
+  transition: box-shadow 0.2s;
+  user-select: none;
+  align-items: center;
+  display: flex;
+  font-size: 13px;
+}
+.pi {
+  text-align: center;
+  width: 1.38571429em;
+  margin-right: 5px;
+}
+
+a {
+  text-decoration: none;
+}
+.overlay-menu {
+  width: 100vw;
+  height: 100vh;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  position: absolute;
+}
