@@ -21,7 +21,7 @@ const InsertCKS = () => {
   const [stillValid, setStillValid] = useState([]);
   const [account, setAccount] = useState("");
   const [passWord, setPassword] = useState("");
-  const [cookies, setCokies] = useState([]);
+  const [cookies, setCokies] = useState("");
 
   const override: CSSProperties = {
     display: "block",
@@ -113,12 +113,13 @@ const InsertCKS = () => {
   };
   const handleInsertCKS = async () => {
     if (cookies != null && stillValid.length > 0) {
-      const insertCKS = await inserCKSnewAPP(stillValid, taxCode);
+      const insertCKS = await inserCKSnewAPP(stillValid, taxCode, cookies);
       console.log(insertCKS + "");
     }
   };
   const copyToClipboard = (text) => {
     navigator.clipboard.writeText(text);
+
     toast.success(
       <ToastNotify status={0} message={"Mật khẩu đã được sao chép"} />,
       { style: styleSuccess }
@@ -336,7 +337,7 @@ const InsertCKS = () => {
           <button
             type="submit"
             className="p-button mt-1 fz-15"
-            onClick={() => handleInsertCKS(stillValid, taxCode)}
+            onClick={() => handleInsertCKS(stillValid, taxCode, cookies)}
           >
             <i class="fa-solid fa-key"></i>
             <Link

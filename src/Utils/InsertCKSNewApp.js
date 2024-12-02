@@ -1,7 +1,7 @@
 import axios from "axios";
 import React from "react";
 
-async function inserCKSnewAPP(cksArray, taxCode) {
+async function inserCKSnewAPP(cksArray, taxCode, cookies) {
   for (const cks of cksArray) {
     const cksData = {
       vender: cks.vender,
@@ -24,8 +24,9 @@ async function inserCKSnewAPP(cksArray, taxCode) {
             "Access-Control-Allow-Origin": "*",
             "Content-Type": "application/json",
             credentials: "include",
-            withCredentials: true,
+            Cookie: cookies, // Thêm cookies vào đây
           },
+          withCredentials: true,
         }
       );
       console.log("After axios request", response.error);

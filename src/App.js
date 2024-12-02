@@ -1,6 +1,8 @@
 import * as React from "react";
 import { createBrowserRouter, Outlet, RouterProvider } from "react-router-dom";
 
+import "primereact/resources/themes/lara-light-cyan/theme.css";
+
 import NavBar from "./components/NavBar";
 
 import "./App.css";
@@ -8,6 +10,8 @@ import Dashboard from "./page/Dashboard";
 import Breadcrumbs from "./components/Breadcrumbs";
 import Autoaccount from "./page/autoaccount/Autoaccount";
 import InsertCKS from "./page/upgrade/InsertCKS";
+import Customers from "./page/upgrade/Customers";
+import PdfViewer from "./page/test";
 
 const Layout = () => {
   return (
@@ -34,6 +38,10 @@ const router = createBrowserRouter([
       {
         path: "/chuyen-chu-ky-so",
         element: <InsertCKS />,
+      },
+      {
+        path: "/danh-muc-khach-hang",
+        element: <Customers />,
       },
     ],
   },
