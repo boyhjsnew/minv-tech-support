@@ -1,6 +1,8 @@
 /* eslint-disable jsx-a11y/alt-text */
 import React, { useEffect, useState } from "react";
 
+import { Steps } from "primereact/steps";
+
 import "./NavBar.css";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 // import ModalMenu from "./ModalMenu";

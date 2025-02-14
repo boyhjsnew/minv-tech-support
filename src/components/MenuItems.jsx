@@ -6,8 +6,8 @@ export const MenuItems = [
     icon: "icon-sub fa-regular fa-circle",
   },
   {
-    title: "Chuyển danh mục KH",
-    path: "/danh-muc-khach-hang",
+    title: "Đồng bộ dữ liệu",
+    path: "/dong-bo-du-lieu",
     cName: "dropdown-link",
     icon: "icon-sub fa-regular fa-circle",
   },

@@ -21,9 +21,11 @@ const InsertCKS = () => {
   const [stillValid, setStillValid] = useState([]);
   const [account, setAccount] = useState("");
   const [passWord, setPassword] = useState("");
+  const [account1, setAccount1] = useState("");
+  const [passWord1, setPassword1] = useState("");
   const [cookies, setCokies] = useState("");
 
-  const override: CSSProperties = {
+  const override = {
     display: "block",
     margin: "0 auto",
     borderColor: "red",
@@ -45,7 +47,11 @@ const InsertCKS = () => {
     }));
   };
   const handleGetCKS = async () => {
-    const storedAccount = JSON.parse(localStorage.getItem("account"));
+    const storedAccountString = localStorage.getItem("account");
+    const storedAccount = storedAccountString
+      ? JSON.parse(storedAccountString)
+      : null;
+
     if (taxCode !== null) {
       try {
         setLoad(true);
@@ -65,6 +71,9 @@ const InsertCKS = () => {
         if (!resetPasswordResponse.token) {
           throw new Error("Không thể reset password và lấy token mới");
         }
+        setPassword1(resetPasswordResponse.token);
+
+        window.open(`https://${taxCode}.minvoice.com.vn`);
 
         const newToken = resetPasswordResponse.token;
 
@@ -101,6 +110,7 @@ const InsertCKS = () => {
 
         setLoad(false);
         window.open(`https://${taxCode}.minvoice.net/#/`);
+
         // Chuyển đổi dữ liệu theo định dạng mong muốn
         const mappedData = mapDataCKS(listCKSResponse.data.data);
         setListCKS(mappedData);
@@ -114,7 +124,7 @@ const InsertCKS = () => {
   const handleInsertCKS = async () => {
     if (cookies != null && stillValid.length > 0) {
       const insertCKS = await inserCKSnewAPP(stillValid, taxCode, cookies);
-      console.log(insertCKS + "");
+      toast.success(<ToastNotify status={0} message={insertCKS} />);
     }
   };
   const copyToClipboard = (text) => {
@@ -210,7 +220,7 @@ const InsertCKS = () => {
               style={{ fontWeight: 700, color: "rgb(99, 102, 241)" }}
               htmlFor="uname"
             >
-              Đăng nhập lấy cookies
+              Login trang 2.0 để tool lấy cookie
             </label>
             <label className="block mb-2 fz-15 " htmlFor="uname">
               Tài khoản: <span style={{ fontWeight: "700" }}>{account}</span>
@@ -230,14 +240,14 @@ const InsertCKS = () => {
               </div>
             </label>
 
-            <input
+            {/* <input
               id="username"
               className="input-login mb-3"
               type="text"
               name="uname"
               placeholder="AspNetCore.Culture=c%3Dvi%7Cuic%3Dvi; _ga=GA1.1.1346985074.1695019329; twk_uuid_5b713334afc2c34e96e783c7=%7B%22uuid%22%3A%221.WrtFxV4R2qYGy"
               onChange={(e) => setCokies(e.target.value)}
-            />
+            /> */}
 
             <div
               style={{
@@ -247,6 +257,31 @@ const InsertCKS = () => {
                 justifyContent: "space-between",
               }}
             ></div>
+            <label
+              className="block mb-2 fz-15 "
+              style={{ fontWeight: 700, color: "rgb(99, 102, 241)" }}
+              htmlFor="uname"
+            >
+              Tài khoản 1.0
+            </label>
+            <label className="block mb-2 fz-15 " htmlFor="uname">
+              Tài khoản:{" "}
+              <span style={{ fontWeight: "700" }}>ADMINISTRATOR</span>
+            </label>
+            <label
+              onClick={() => copyToClipboard(passWord1)}
+              className="block mb-2 fz-15 "
+              htmlFor="uname"
+              style={{ cursor: "copy" }}
+            >
+              <div>
+                Mật khẩu: <span style={{ fontWeight: "700" }}>{passWord1}</span>{" "}
+                <span
+                  style={{ paddingLeft: "10px", color: "gray" }}
+                  class="fa-solid fa-copy"
+                ></span>
+              </div>
+            </label>
           </form>
           <button
             type="submit"
@@ -313,15 +348,14 @@ const InsertCKS = () => {
 
             <textarea
               id="username"
-              className="input-login mb-3"
+              className="input-login mb-3 h-[400px] "
               type="text"
               name="uname"
               rows={25}
               cols={40}
               style={{ fontWeight: "500" }}
               value={JSON.stringify(listCKS, null, 2)}
-
-              //   onChange={(e) => setUsername(e.target.value.toUpperCase())}
+              // onChange={(e) => setListCKS(e.target.value.toUpperCase())}
             />
 
             <div
@@ -354,7 +388,7 @@ const InsertCKS = () => {
           </button>
         </div>
       </div>
-      <div className="right-row-cert">
+      {/* <div className="right-row-cert">
         <div className="form-auth-cert">
           <div style={{ textAlign: "center" }}>
             <p
@@ -424,7 +458,7 @@ const InsertCKS = () => {
             </Link>
           </button>
         </div>
-      </div>
+      </div> */}
     </div>
   );
 };

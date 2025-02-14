@@ -40,7 +40,7 @@ const router = createBrowserRouter([
         element: <InsertCKS />,
       },
       {
-        path: "/danh-muc-khach-hang",
+        path: "/dong-bo-du-lieu",
         element: <Customers />,
       },
     ],
@@ -49,7 +49,7 @@ const router = createBrowserRouter([
 function App() {
   return (
     <div className="app">
-      <div className="container">
+      <div className="w-full container">
         <RouterProvider router={router} />
       </div>
     </div>
