@@ -4,14 +4,20 @@ import { createBrowserRouter, Outlet, RouterProvider } from "react-router-dom";
 import "primereact/resources/themes/lara-light-cyan/theme.css";
 
 import NavBar from "./components/NavBar";
+import { Provider } from "react-redux";
+import { store } from "./store/store";
 
-import "./App.css";
 import Dashboard from "./page/Dashboard";
 import Breadcrumbs from "./components/Breadcrumbs";
 import Autoaccount from "./page/autoaccount/Autoaccount";
 import InsertCKS from "./page/upgrade/InsertCKS";
 import Customers from "./page/upgrade/Customers";
-import PdfViewer from "./page/test";
+import "primeicons/primeicons.css";
+import "primereact/resources/primereact.min.css"; // core css
+import "primeicons/primeicons.css";
+
+import Tax from "./page/Tax";
+import Declaration from "./page/upgrade/ Declaration";
 
 const Layout = () => {
   return (
@@ -36,6 +42,10 @@ const router = createBrowserRouter([
         element: <Autoaccount />,
       },
       {
+        path: "/tra-cuu",
+        element: <Tax />,
+      },
+      {
         path: "/chuyen-chu-ky-so",
         element: <InsertCKS />,
       },
@@ -43,16 +53,23 @@ const router = createBrowserRouter([
         path: "/dong-bo-du-lieu",
         element: <Customers />,
       },
+      {
+        path: "/chuyen-to-khai",
+        element: <Declaration />,
+      },
     ],
   },
 ]);
 function App() {
   return (
-    <div className="app">
-      <div className="w-full container">
-        <RouterProvider router={router} />
+    <Provider store={store}>
+      {" "}
+      <div className="app">
+        <div className="w-full container">
+          <RouterProvider router={router} />
+        </div>
       </div>
-    </div>
+    </Provider>
   );
 }
 

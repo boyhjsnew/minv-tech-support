@@ -20,7 +20,6 @@ const mapCustomerData = async (customerArray) => {
 
 // 🆕 Xuất file nhưng không tải xuống, mà trả về Blob
 const exportToExcelAuto = () => {
-  alert(excelData);
   if (excelData.length === 0) {
     throw new Error("Không có dữ liệu để xuất file!");
   }

@@ -6,7 +6,7 @@ const breadcrumbLabels = {
   "/dashboard": "Trang chủ",
   "/tu-dong-dang-nhap": "Đăng nhập CRM",
   "/chuyen-chu-ky-so": "Chuyển chữ ký số",
-  "/services": "Dịch vụ",
+  "/tra-cuu": "Tra cứu MST mSMI",
   "/branchreport": "Báo cáo chi nhánh",
   "/systemreport": "Báo cáo toàn hệ thống",
   // Thêm các đường dẫn và nhãn khác nếu cần thiết
@@ -39,7 +39,7 @@ const Breadcrumbs = () => {
       style={{
         width: "100%",
         backgroundColor: "#FAFAFA",
-        position: "fixed",
+        // position: "fixed",
         color: "#0069b4",
         marginTop: "4rem",
         display: "flex",

@@ -1,7 +1,7 @@
-import React, { useState, useRe, useRef } from "react";
+import React, { useState, useRef } from "react";
 import { Steps } from "primereact/steps";
 import { Button } from "primereact/button";
-import { ProgressSpinner } from "primereact/progressspinner";
+
 import getDMKH from "../../Utils/GetDMKH.js";
 import "../dashboard.scss";
 
@@ -13,11 +13,14 @@ import {
 import uploadExcelFile from "../../Utils/UploadExcel.js";
 
 import { mapCustomerData, exportToExcelAuto } from "../../Utils/AutoMapping.js";
+import getDMHH from "../../Utils/GetDMHH.js";
+import { useSelector } from "react-redux";
 
 export default function Customers() {
   const [activeIndex, setActiveIndex] = useState(-1);
   const [customerRaws, setCustomerRaws] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [loadingHH, setLoadingHH] = useState(false);
   const [countError, setCountError] = useState(0);
   const [countSuccess, setCountSuccess] = useState(0);
   const toast = useRef(null);
@@ -29,12 +32,14 @@ export default function Customers() {
     });
   };
 
+  const taxCode = useSelector((state) => state.taxCode.value);
   const fetchDataDMKH = async () => {
+    console.log(taxCode);
     setErrorMessage("");
     setLoading(true);
     try {
       console.log("📌 Đang lấy dữ liệu khách hàng...");
-      const listDMKH = await getDMKH("0316393501");
+      const listDMKH = await getDMKH(taxCode);
 
       if (listDMKH.length > 0) {
         console.log("✅ Lấy dữ liệu thành công:", listDMKH);
@@ -53,7 +58,32 @@ export default function Customers() {
     } finally {
       setLoading(false);
     }
-    alert(errorMessage.length);
+  };
+
+  const fetchDataDMHH = async () => {
+    setErrorMessage("");
+    setLoadingHH(true);
+    try {
+      console.log("📌 Đang lấy dữ liệu khách hàng...");
+      const listDMKH = await getDMHH(taxCode);
+
+      if (listDMKH.length > 0) {
+        console.log("✅ Lấy dữ liệu thành công:", listDMKH);
+        setCustomerRaws(listDMKH); // Cập nhật state nhưng chưa dùng ngay!
+
+        const mappedData = await mapCustomerDataAsync(listDMKH);
+        setCustomerRaws(mappedData); // State vẫn chưa cập nhật ngay lập tức!
+        setActiveIndex(1);
+      } else {
+        console.warn("⚠️ Không có dữ liệu khách hàng.");
+        setErrorMessage("Không có dữ liệu để tải lên.");
+      }
+    } catch (error) {
+      console.error("❌ Lỗi khi lấy dữ liệu:", error);
+      setErrorMessage("Lỗi khi lấy dữ liệu khách hàng.");
+    } finally {
+      setLoadingHH(false);
+    }
   };
 
   // 🆕 Hàm xử lý upload file Excel
@@ -89,7 +119,7 @@ export default function Customers() {
       }
 
       console.log("📤 Đang upload file...", file);
-      const importedData = await uploadExcelFile(file, "0316393501");
+      const importedData = await uploadExcelFile(file, "1101884452");
       console.log("✅ Upload thành công:", importedData);
 
       setCustomerRaws(importedData);
@@ -110,76 +140,178 @@ export default function Customers() {
     { label: "Thêm lên 2.0" },
     { label: "Hoàn tất" },
   ];
+  const steps_HH = [
+    { label: "Lấy DM Hàng hoá" },
+    { label: "Mapping data" },
+    { label: "Thêm lên 2.0" },
+    { label: "Hoàn tất" },
+  ];
 
   return (
-    <div className="pt-32 w-full flex flex-row px-24 ">
-      <div className="flex-1 flex h-full pr-12">
-        <Button
-          loading={loading}
-          onClick={fetchDataDMKH}
-          style={{ height: "40px", width: "230px" }}
-          label="Đồng bộ khách hàng"
-        />
-      </div>
+    <div className="pt-[10px] w-full flex flex-col pl-[24px] gap-3 ">
+      <div className="flex flex-row w-full">
+        {" "}
+        <div className="flex-1 flex h-full pr-12">
+          <Button
+            loading={loading}
+            onClick={fetchDataDMKH}
+            style={{ height: "40px", width: "230px" }}
+            label="Đồng bộ khách hàng"
+          />
+        </div>
+        <div
+          className="w-full flex flex-col border-2 rounded-lg  p-6 shadow-lg "
+          style={{
+            boxShadow: loading
+              ? "0px 4px 10px rgba(59, 130, 246, 0.5)"
+              : "none",
+          }}
+        >
+          <Steps
+            model={steps}
+            activeIndex={activeIndex}
+            onSelect={(e) => setActiveIndex(e.index)}
+            readOnly={true}
+          />
 
-      <div className="w-full flex flex-col border-2 rounded-lg p-6">
-        <Steps
-          model={steps}
-          activeIndex={activeIndex}
-          onSelect={(e) => setActiveIndex(e.index)}
-          readOnly={false}
-        />
+          <div className="flex w-full gap-[1rem] mt-6">
+            {/* Tổng số bản ghi */}
+            <InfoCard title="Số lượng bản ghi" value={customerRaws?.length} />
 
-        <div className="flex w-full gap-6 mt-6">
-          {/* Tổng số bản ghi */}
-          <InfoCard title="Số lượng bản ghi" value={customerRaws?.length} />
-
-          {/* Trạng thái Mapping */}
-          <InfoCard title="Trạng thái" value={activeIndex >= 1 ? "Xong" : ""} />
-
-          {/* Xuất & Upload Excel */}
-          <div className="flex-1 border-2 border-dotted rounded-lg p-4">
-            <InfoRow
-              title="Tải file Excel"
-              iconClass="fa-solid fa-file-excel text-green-600 cursor-pointer"
-              onClick={exportToExcel}
+            {/* Trạng thái Mapping */}
+            <InfoCard
+              title="Trạng thái"
+              value={activeIndex >= 1 ? "Xong" : ""}
             />
 
-            {/* 🆕 Input hidden để chọn file */}
-            <input
-              type="file"
-              accept=".xls, .xlsx"
-              className="hidden"
-              id="file-upload"
-              onChange={handleFileUpload}
-            />
-            <label
-              htmlFor="file-upload"
-              className="text-blue-600 text-[13px] cursor-pointer border-2 bg-gray p-1"
-            >
-              Chọn file
-            </label>
+            {/* Xuất & Upload Excel */}
+            <div className="flex-1 border-2 border-dotted rounded-lg p-4">
+              <InfoRow
+                title="Tải file Excel"
+                iconClass="fa-solid fa-file-excel text-green-600 cursor-pointer"
+                onClick={exportToExcel}
+              />
+
+              {/* 🆕 Input hidden để chọn file */}
+              <input
+                type="file"
+                accept=".xls, .xlsx"
+                className="hidden"
+                id="file-upload"
+                onChange={handleFileUpload}
+              />
+              <label
+                htmlFor="file-upload"
+                className="text-blue-600 text-[13px] cursor-pointer border-2 bg-gray p-1"
+              >
+                Chọn file
+              </label>
+            </div>
+
+            {/* Trạng thái Hoàn tất */}
+            <div className="flex-1 border-2 border-dotted rounded-lg p-4">
+              {" "}
+              <div
+                className=""
+                title="Kết quả"
+                value={errorMessage.length > 0 ? "Thất bại" : "Thành công"}
+              >
+                <div className="card flex justify-content-center">
+                  <Toast ref={toast} />
+                  {errorMessage.length > 0 ? (
+                    <Button onClick={show} label="Thất bại" />
+                  ) : errorMessage.length === 0 ? (
+                    ""
+                  ) : !errorMessage ? (
+                    "Thành công"
+                  ) : (
+                    ""
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
+        </div>
+      </div>
+      <div className="flex flex-row w-full">
+        {" "}
+        <div className="flex-1 flex h-full pr-12">
+          <Button
+            loading={loadingHH}
+            onClick={fetchDataDMHH}
+            style={{ height: "40px", width: "230px" }}
+            label="Đồng bộ hàng hoá"
+          />
+        </div>
+        <div
+          className="w-full flex flex-col border-2 rounded-lg p-6"
+          style={{
+            boxShadow: loadingHH
+              ? "0px 4px 10px rgba(59, 130, 246, 0.5)"
+              : "none",
+          }}
+        >
+          <Steps
+            model={steps_HH}
+            activeIndex={activeIndex}
+            onSelect={(e) => setActiveIndex(e.index)}
+            readOnly={false}
+          />
 
-          {/* Trạng thái Hoàn tất */}
-          <div className="flex-1 border-2 border-dotted rounded-lg p-4">
-            {" "}
-            <div
-              className=""
-              title="Kết quả"
-              value={errorMessage.length > 0 ? "Thất bại" : "Thành công"}
-            >
-              <div className="card flex justify-content-center">
-                <Toast ref={toast} />
-                {errorMessage.length > 0 ? (
-                  <Button onClick={show} label="Thất bại" />
-                ) : errorMessage.length === 0 ? (
-                  ""
-                ) : !errorMessage ? (
-                  "Thành công"
-                ) : (
-                  ""
-                )}
+          <div className="flex w-full gap-[1rem] mt-6">
+            {/* Tổng số bản ghi */}
+            <InfoCard title="Số lượng bản ghi" value={customerRaws?.length} />
+
+            {/* Trạng thái Mapping */}
+            <InfoCard
+              title="Trạng thái"
+              value={activeIndex >= 1 ? "Xong" : ""}
+            />
+
+            {/* Xuất & Upload Excel */}
+            <div className="flex-1 border-2 border-dotted rounded-lg p-4">
+              <InfoRow
+                title="Tải file Excel"
+                iconClass="fa-solid fa-file-excel text-green-600 cursor-pointer"
+                onClick={exportToExcel}
+              />
+
+              {/* 🆕 Input hidden để chọn file */}
+              <input
+                type="file"
+                accept=".xls, .xlsx"
+                className="hidden"
+                id="file-upload"
+                onChange={handleFileUpload}
+              />
+              <label
+                htmlFor="file-upload"
+                className="text-blue-600 text-[13px] cursor-pointer border-2 bg-gray p-1"
+              >
+                Chọn file
+              </label>
+            </div>
+
+            {/* Trạng thái Hoàn tất */}
+            <div className="flex-1 border-2 border-dotted rounded-lg p-4">
+              {" "}
+              <div
+                className=""
+                title="Kết quả"
+                value={errorMessage.length > 0 ? "Thất bại" : "Thành công"}
+              >
+                <div className="card flex justify-content-center">
+                  <Toast ref={toast} />
+                  {errorMessage.length > 0 ? (
+                    <Button onClick={show} label="Thất bại" />
+                  ) : errorMessage.length === 0 ? (
+                    ""
+                  ) : !errorMessage ? (
+                    "Thành công"
+                  ) : (
+                    ""
+                  )}
+                </div>
               </div>
             </div>
           </div>

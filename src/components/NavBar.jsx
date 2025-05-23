@@ -107,14 +107,14 @@ const NavBar = () => {
           <li
             role="none"
             style={{ alignItems: "center" }}
-            className={getLocation.pathname === "/services" ? "active" : ""}
+            className={getLocation.pathname === "/tra-cuu" ? "active" : ""}
           >
-            <Link className="link" to="/services">
+            <Link className="link" to="/tra-cuu">
               <span
                 style={{ paddingRight: "5px" }}
                 class="fa-solid fa-table-list"
               ></span>
-              <span>Quản lý dịch vụ</span>
+              <span>Tra cứu MST mSMI</span>
             </Link>
           </li>
           <li

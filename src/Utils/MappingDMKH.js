@@ -21,9 +21,10 @@ const mapCustomerDataAsync = async (customerArray) => {
 // Hàm xuất file khi người dùng click
 const exportToExcel = () => {
   if (excelData.length === 0) {
+    alert("Chưa có dữ liệu kìa !");
     return;
   }
-  alert(excelData.length);
+
   // Tạo workbook và worksheet
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.json_to_sheet(excelData);

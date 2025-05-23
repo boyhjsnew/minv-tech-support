@@ -1,5 +1,5 @@
-import React, { useEffect, useState, CSSProperties } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import React, { useEffect, useState } from "react";
+import { Link, replace } from "react-router-dom";
 import "./InsertCKS.scss";
 
 import GetListCKS from "../../Utils/GetCKS";
@@ -10,21 +10,23 @@ import { toast, ToastContainer } from "react-toastify";
 import { styleError, styleSuccess } from "../../components/ToastNotifyStyle";
 import Login from "../../Utils/Login";
 import ToastNotify from "../../components/ToastNotify";
-import ClipLoader from "react-spinners/ClipLoader";
+
 import { MoonLoader } from "react-spinners";
 import inserCKSnewAPP from "../../Utils/InsertCKSNewApp";
+import { useDispatch, useSelector } from "react-redux";
+import { setTaxCode } from "../../store/taxCodeSlice";
 
 const InsertCKS = () => {
-  const [taxCode, setTaxCode] = useState(null);
+  const dispatch = useDispatch();
+  const taxCode = useSelector((state) => state.taxCode.value);
   const [listCKS, setListCKS] = useState([]);
   const [load, setLoad] = useState(false);
   const [stillValid, setStillValid] = useState([]);
   const [account, setAccount] = useState("");
   const [passWord, setPassword] = useState("");
-  const [account1, setAccount1] = useState("");
+
   const [passWord1, setPassword1] = useState("");
   const [cookies, setCokies] = useState("");
-
   const override = {
     display: "block",
     margin: "0 auto",
@@ -32,6 +34,10 @@ const InsertCKS = () => {
     position: "absolute",
     top: "40%",
     left: "45%",
+  };
+  // Thay đổi cách set taxCode
+  const handleTaxCodeChange = (e) => {
+    dispatch(setTaxCode(e.target.value.trim()));
   };
 
   const mapDataCKS = (data) => {
@@ -73,7 +79,11 @@ const InsertCKS = () => {
         }
         setPassword1(resetPasswordResponse.token);
 
-        window.open(`https://${taxCode}.minvoice.com.vn`);
+        const openNewWindow = () => {
+          window.open(`https://${taxCode.replace("-", "")}.minvoice.com.vn`);
+        };
+
+        openNewWindow();
 
         const newToken = resetPasswordResponse.token;
 
@@ -204,7 +214,8 @@ const InsertCKS = () => {
               name="uname"
               placeholder="0106026495-998"
               style={{ textTransform: "uppercase" }}
-              onChange={(e) => setTaxCode(e.target.value)}
+              onChange={handleTaxCodeChange}
+              value={taxCode || ""}
             />
 
             <div
@@ -222,11 +233,16 @@ const InsertCKS = () => {
             >
               Login trang 2.0 để tool lấy cookie
             </label>
-            <label className="block mb-2 fz-15 " htmlFor="uname">
+            <label
+              style={{ cursor: "copy" }}
+              onClick={() => copyToClipboard(account.trim())}
+              className="block mb-2 fz-15 "
+              htmlFor="uname"
+            >
               Tài khoản: <span style={{ fontWeight: "700" }}>{account}</span>
             </label>
             <label
-              onClick={() => copyToClipboard(passWord)}
+              onClick={() => copyToClipboard(passWord.trim())}
               className="block mb-2 fz-15 "
               htmlFor="uname"
               style={{ cursor: "copy" }}
@@ -264,7 +280,12 @@ const InsertCKS = () => {
             >
               Tài khoản 1.0
             </label>
-            <label className="block mb-2 fz-15 " htmlFor="uname">
+            <label
+              onClick={() => copyToClipboard("ADMINISTRATOR")}
+              className="block mb-2 fz-15 "
+              htmlFor="uname"
+              style={{ cursor: "copy" }}
+            >
               Tài khoản:{" "}
               <span style={{ fontWeight: "700" }}>ADMINISTRATOR</span>
             </label>
@@ -279,6 +300,8 @@ const InsertCKS = () => {
                 <span
                   style={{ paddingLeft: "10px", color: "gray" }}
                   class="fa-solid fa-copy"
+                  onClick={() => copyToClipboard(passWord1)}
+                  className="block mb-2 fz-15 "
                 ></span>
               </div>
             </label>
@@ -298,7 +321,7 @@ const InsertCKS = () => {
               }}
               // to="/dashboard"
             >
-              Lấy danh sách CKS
+              Kích hoạt
             </Link>
           </button>
         </div>
