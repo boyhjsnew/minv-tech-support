@@ -1,15 +1,16 @@
 .app {
   .container {
     .login-cert {
+      margin: 0;
       display: flex;
-      height: 100vh;
+
       background-color: #ffff;
       align-items: center;
       justify-content: center;
 
       .right-row-cert {
         display: flex;
-        margin-top: 120px;
+
         padding-left: 35px;
 
         .form-auth-cert {
@@ -22,9 +23,6 @@
           padding-bottom: 1.5rem;
           padding-left: 1.5rem;
           background: #eff3f7;
-
-          // .from-login {
-          // }
         }
       }
     }

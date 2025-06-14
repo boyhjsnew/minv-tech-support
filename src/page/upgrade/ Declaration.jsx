@@ -44,7 +44,7 @@ export default function Declaration() {
                 <div className="space-y-3">
                   <div className="flex items-center">
                     <span className="font-semibold text-gray-600 w-40">
-                      Mã số thuế:
+                      Thông tin chữ ký số
                     </span>
                     <span className="text-gray-800">{companyInfo.taxCode}</span>
                   </div>

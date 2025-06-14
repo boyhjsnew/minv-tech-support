@@ -99,12 +99,12 @@ const NavBar = () => {
                 className="fa-solid fa-right-left"
               ></span>
               <span>
-                Chuyển đổi 2.0 <i className="fas fa-caret-down" />
+                Hỗ trợ kỹ thuật <i className="fas fa-caret-down" />
               </span>
             </div>
             {dropdown && <Dropdown />}
           </li>
-          <li
+          {/* <li
             role="none"
             style={{ alignItems: "center" }}
             className={getLocation.pathname === "/tra-cuu" ? "active" : ""}
@@ -116,8 +116,8 @@ const NavBar = () => {
               ></span>
               <span>Tra cứu MST mSMI</span>
             </Link>
-          </li>
-          <li
+          </li> */}
+          {/* <li
             role="none"
             style={{ alignItems: "center" }}
             className={getLocation.pathname === "/branchreport" ? "active" : ""}
@@ -129,8 +129,8 @@ const NavBar = () => {
               ></span>
               <span>Báo cáo chi nhánh</span>
             </Link>
-          </li>
-          <li
+          </li> */}
+          {/* <li
             role="none"
             style={{ alignItems: "center" }}
             className={getLocation.pathname === "/systemreport" ? "active" : ""}
@@ -142,7 +142,7 @@ const NavBar = () => {
               ></span>
               <span>Báo cáo hệ thống</span>
             </Link>
-          </li>
+          </li> */}
           {/* <li role="none" style={{ alignItems: "center" }}>
             <Link
               className="link"

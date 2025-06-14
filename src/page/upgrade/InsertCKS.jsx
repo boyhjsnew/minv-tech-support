@@ -328,7 +328,7 @@ const InsertCKS = () => {
       </div>
       <div className="right-row-cert">
         <div className="form-auth-cert">
-          <div style={{ textAlign: "center" }}>
+          <div style={{ display: "flex", justifyContent: "center" }}>
             <p
               style={{
                 fontWeight: 600,

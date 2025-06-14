@@ -6,10 +6,10 @@
 
 //css trường hợp màn hìh rộng hơn 1200px đảm bảo canh giữa
 
-.gird-layout.wide {
-  margin: 0 auto !important;
-  max-width: 1410px;
-}
+// .gird-layout.wide {
+//   margin: 0 auto !important;
+//   max-width: 1820px;
+// }
 
 //row chứa lumn giúp lumn nằm ngang
 //khi tổng chiều ngang vượt quá lumn xuống dòng
@@ -93,7 +93,7 @@
   max-width: 100%;
 }
 //=>TABLET:not(
-@media (max-width: 1023px) {
+@media (max-width: 1820px) {
   .gird-layout.wide {
     width: 930px;
   }
@@ -234,9 +234,9 @@
 }
 // PC low resolution > =============================================================// =============================================================
 // =============================================================// =============================================================
-@media (min-width: 1113px) {
+@media (min-width: 1464px) {
   .gird-layout.wide {
-    width: 1409px;
+    width: 1464px;
   }
   .row.sm-gutter {
     margin-left: -5px;

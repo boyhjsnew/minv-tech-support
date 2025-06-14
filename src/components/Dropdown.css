@@ -39,9 +39,3 @@
 .dropdown-link:hover {
   color: #6466f1;
 }
-
-@media screen and (max-width: 960px) {
-  .fa-caret-down {
-    display: none;
-  }
-}

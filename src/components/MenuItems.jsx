@@ -12,6 +12,12 @@ export const MenuItems = [
     icon: "icon-sub fa-regular fa-circle",
   },
   {
+    title: "Thêm IntrusCA hàng loạt",
+    path: "/chu-ky-so-hang-loat",
+    cName: "dropdown-link",
+    icon: "icon-sub fa-regular fa-circle",
+  },
+  {
     title: "Chuyển tờ khai",
     path: "/chuyen-to-khai",
     cName: "dropdown-link",

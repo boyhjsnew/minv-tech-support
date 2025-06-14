@@ -2,8 +2,8 @@
   .container {
     .login {
       display: flex;
-      height: 100vh;
       background-color: #ffff;
+      height: 100vh;
 
       .left-row {
         display: flex;
@@ -13,19 +13,16 @@
         background-size: contain;
       }
       .right-row {
-        align-items: center;
-        justify-content: center;
-        flex: 1;
-        display: flex;
         .form-auth {
+          margin-top: 10%;
+          width: 400px;
+
+          padding-top: 10px;
           border-radius: 12px;
           box-shadow: 0 3px 5px rgba(0, 0, 0, 0.02), 0 0 2px rgba(0, 0, 0, 0.05),
             0 1px 4px rgba(0, 0, 0, 0.08) !important;
           margin-bottom: 1rem;
-          padding-top: 1.5rem;
-          padding-right: 1.5rem;
-          padding-bottom: 1.5rem;
-          padding-left: 1.5rem;
+          padding: 1.5rem;
           background: #eff3f7;
 
           // .from-login {
@@ -140,10 +137,4 @@
 }
 .box-shadow {
   box-shadow: 30px -30px 20px rgba(0, 0, 0, 0.3);
-}
-
-@media only screen and (min-width: 46.25em) and (max-width: 63.9375em) {
-  .left-row {
-    display: none !important;
-  }
 }

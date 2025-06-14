@@ -18,6 +18,7 @@ import "primeicons/primeicons.css";
 
 import Tax from "./page/Tax";
 import Declaration from "./page/upgrade/ Declaration";
+import IntrustMultipe from "./page/upgrade/IntrustMultipe";
 
 const Layout = () => {
   return (
@@ -57,6 +58,10 @@ const router = createBrowserRouter([
         path: "/chuyen-to-khai",
         element: <Declaration />,
       },
+      {
+        path: "/chu-ky-so-hang-loat",
+        element: <IntrustMultipe />,
+      },
     ],
   },
 ]);
@@ -65,7 +70,7 @@ function App() {
     <Provider store={store}>
       {" "}
       <div className="app">
-        <div className="w-full container">
+        <div className="container">
           <RouterProvider router={router} />
         </div>
       </div>
