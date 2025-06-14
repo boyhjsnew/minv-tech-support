@@ -12,6 +12,7 @@ export default function IntrustMultipe() {
   const [value, setValue] = useState("");
   const [accountList, setAccountList] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [accountStatus, setAccountStatus] = useState({});
 
   const copyToClipboard = (text) => {
     navigator.clipboard.writeText(text);
@@ -224,14 +225,14 @@ export default function IntrustMultipe() {
 
           if (!response.ok) {
             const errorText = await response.text();
-            console.error("Response error:", {
-              status: response.status,
-              statusText: response.statusText,
-              errorText,
-            });
-            throw new Error(
-              `HTTP error! status: ${response.status}, message: ${errorText}`
-            );
+            let errorMessage = "Lỗi không xác định";
+            try {
+              const errorJson = JSON.parse(errorText);
+              errorMessage = errorJson.error?.message || errorMessage;
+            } catch (e) {
+              errorMessage = errorText;
+            }
+            throw new Error(errorMessage);
           }
 
           // Kiểm tra content type trước khi parse JSON
@@ -243,7 +244,6 @@ export default function IntrustMultipe() {
           } else {
             const text = await response.text();
             console.log("Response text:", text);
-            // Nếu response là rỗng hoặc không phải JSON, tạo một object mặc định
             cksData = { id: null, message: text || "Thêm CKS thành công" };
           }
 
@@ -253,6 +253,14 @@ export default function IntrustMultipe() {
           if (cksData && cksData.id) {
             console.log("Bắt đầu cập nhật trạng thái cho:", account.taxCode);
             await updateCKSStatus(account.taxCode, cksData.id, cksData);
+            // Cập nhật trạng thái thành công
+            setAccountStatus((prev) => ({
+              ...prev,
+              [account.taxCode]: {
+                status: "success",
+                message: "Thêm và cập nhật CKS thành công",
+              },
+            }));
             toast.success(
               <ToastNotify
                 status={0}
@@ -262,6 +270,14 @@ export default function IntrustMultipe() {
             );
           } else {
             console.warn("Không có ID CKS để cập nhật cho:", account.taxCode);
+            // Cập nhật trạng thái thành công
+            setAccountStatus((prev) => ({
+              ...prev,
+              [account.taxCode]: {
+                status: "success",
+                message: "Thêm CKS thành công",
+              },
+            }));
             toast.success(
               <ToastNotify
                 status={0}
@@ -275,6 +291,11 @@ export default function IntrustMultipe() {
             error: error.message,
             stack: error.stack,
           });
+          // Cập nhật trạng thái lỗi
+          setAccountStatus((prev) => ({
+            ...prev,
+            [account.taxCode]: { status: "error", message: error.message },
+          }));
           toast.error(
             <ToastNotify
               status={-1}
@@ -402,10 +423,42 @@ export default function IntrustMultipe() {
                 padding: "0.75rem",
                 border: "1px solid #e5e7eb",
                 borderRadius: "6px",
-                backgroundColor: "#f9fafb",
+                backgroundColor:
+                  accountStatus[account.taxCode]?.status === "success"
+                    ? "#f0fdf4" // Màu xanh nhạt cho thành công
+                    : accountStatus[account.taxCode]?.status === "error"
+                    ? "#fef2f2" // Màu đỏ nhạt cho lỗi
+                    : "#f9fafb", // Màu mặc định
                 fontSize: "13px",
+                position: "relative",
               }}
             >
+              {/* Hiển thị trạng thái */}
+              {accountStatus[account.taxCode] && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "0.5rem",
+                    right: "0.5rem",
+                    padding: "0.25rem 0.5rem",
+                    borderRadius: "4px",
+                    fontSize: "12px",
+                    backgroundColor:
+                      accountStatus[account.taxCode].status === "success"
+                        ? "#dcfce7" // Màu xanh cho thành công
+                        : "#fee2e2", // Màu đỏ cho lỗi
+                    color:
+                      accountStatus[account.taxCode].status === "success"
+                        ? "#166534" // Màu chữ xanh đậm
+                        : "#991b1b", // Màu chữ đỏ đậm
+                  }}
+                >
+                  {accountStatus[account.taxCode].status === "success"
+                    ? "✓ Thành công"
+                    : "✕ Lỗi"}
+                </div>
+              )}
+
               {/* Mã số thuế */}
               <div
                 style={{
@@ -542,6 +595,22 @@ export default function IntrustMultipe() {
                   </span>
                 </div>
               </div>
+
+              {/* Hiển thị thông báo lỗi nếu có */}
+              {accountStatus[account.taxCode]?.status === "error" && (
+                <div
+                  style={{
+                    marginTop: "0.5rem",
+                    padding: "0.5rem",
+                    backgroundColor: "#fee2e2",
+                    borderRadius: "4px",
+                    color: "#991b1b",
+                    fontSize: "12px",
+                  }}
+                >
+                  {accountStatus[account.taxCode].message}
+                </div>
+              )}
             </div>
           ))}
         </div>
