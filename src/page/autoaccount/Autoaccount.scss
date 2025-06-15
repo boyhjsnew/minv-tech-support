@@ -3,7 +3,6 @@
     .login {
       display: flex;
       background-color: #ffff;
-      height: 100vh;
 
       .left-row {
         display: flex;
@@ -13,6 +12,9 @@
         background-size: contain;
       }
       .right-row {
+        display: flex;
+        flex: 1;
+        justify-content: center;
         .form-auth {
           margin-top: 10%;
           width: 400px;

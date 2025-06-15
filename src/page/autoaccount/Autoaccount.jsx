@@ -73,7 +73,7 @@ const Autoaccount = () => {
       <div className="left-row"></div>
       <div className="right-row">
         <div className="form-auth">
-          <div style={{ textAlign: "center" }}>
+          <div className="flex flex-col item-center items-center">
             <img
               src={require("../../assets/logo-minvoice.png")}
               alt="logo"

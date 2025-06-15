@@ -214,11 +214,10 @@ export default function IntrustMultipe() {
               withCredentials: true,
               body: JSON.stringify({
                 user: account.certInfo.username,
-                passwordCer: account.certInfo.password,
-                pin: account.certInfo.pin,
-                inputChange: "pin",
+                passwordCer: account.certInfo.pin,
+                pin: "123456",
+                inputChange: "passwordCer",
                 tokenType: 5,
-                used: true,
               }),
             }
           );
@@ -349,7 +348,7 @@ export default function IntrustMultipe() {
             fontWeight: 600,
             color: "#0069b4",
             fontSize: "23px",
-            marginBottom: "30px",
+            marginBottom: "10px",
           }}
         >
           Thêm chữ ký số IntrustCA hàng loạt
@@ -624,18 +623,14 @@ export default function IntrustMultipe() {
           justifyContent: "center",
         }}
       >
-        <button
-          type="submit"
+        <Button
           style={{
-            backgroundColor: "#0069b4",
-            color: "white",
-            border: "none",
-            padding: "0.75rem 1.5rem",
+            padding: "0.5rem 1.5rem",
             borderRadius: "4px",
             cursor: "pointer",
             display: "flex",
             alignItems: "center",
-            gap: "0.5rem",
+            gap: 3,
             minWidth: "200px",
             justifyContent: "center",
           }}
@@ -652,7 +647,7 @@ export default function IntrustMultipe() {
           >
             Thêm chữ ký số hàng loạt
           </span>
-        </button>
+        </Button>
       </div>
     </div>
   );
