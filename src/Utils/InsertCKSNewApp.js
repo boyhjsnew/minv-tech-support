@@ -17,13 +17,13 @@ async function inserCKSnewAPP(cksArray, taxCode, cookies) {
     try {
       console.log("Before axios request");
       const response = await axios.post(
-        `https://${taxCode}.minvoice.net/api/api/app/token`,
+        `https://${taxCode}.minvoice.net/api/app/token`,
         cksData,
         {
           headers: {
             "Access-Control-Allow-Origin": "*",
             "Content-Type": "application/json",
-            credentials: "include",
+            // credentials: "include",
             Cookie: cookies, // Thêm cookies vào đây
           },
           withCredentials: true,

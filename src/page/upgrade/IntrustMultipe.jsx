@@ -159,7 +159,7 @@ export default function IntrustMultipe() {
           headers: {
             "Content-Type": "application/json",
           },
-          credentials: "include",
+
           withCredentials: true,
           body: JSON.stringify({
             vender: cksData.vender,

@@ -19,6 +19,7 @@ import "primeicons/primeicons.css";
 import Tax from "./page/Tax";
 import Declaration from "./page/upgrade/ Declaration";
 import IntrustMultipe from "./page/upgrade/IntrustMultipe";
+import DeleteCache from "./page/cache/DeleteCache";
 
 const Layout = () => {
   return (
@@ -61,6 +62,10 @@ const router = createBrowserRouter([
       {
         path: "/chu-ky-so-hang-loat",
         element: <IntrustMultipe />,
+      },
+      {
+        path: "/xoa-cache-ky",
+        element: <DeleteCache />,
       },
     ],
   },

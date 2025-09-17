@@ -3,6 +3,10 @@ import React, { useEffect, useState } from "react";
 
 import { Steps } from "primereact/steps";
 
+import "primereact/resources/themes/lara-light-cyan/theme.css";
+import "primereact/resources/primereact.min.css";
+import "primeicons/primeicons.css";
+
 import "./NavBar.css";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 // import ModalMenu from "./ModalMenu";
@@ -18,6 +22,8 @@ const NavBar = () => {
   const handleClick = () => setClick(!click);
   const closeMobileMenu = () => setClick(false);
   const [user, setUser] = useState("");
+  const [openDropdown, setOpenDropdown] = useState(false);
+
   const onMouseEnter = () => {
     if (window.innerWidth < 960) {
       setDropdown(false);
@@ -104,19 +110,22 @@ const NavBar = () => {
             </div>
             {dropdown && <Dropdown />}
           </li>
-          {/* <li
+          <li
             role="none"
-            style={{ alignItems: "center" }}
-            className={getLocation.pathname === "/tra-cuu" ? "active" : ""}
+            style={{ alignItems: "center", position: "relative" }}
+            className={getLocation.pathname === "/xoa-cache-ky" ? "active" : ""}
+            onMouseEnter={() => setOpenDropdown(true)}
+            onMouseLeave={() => setOpenDropdown(false)}
           >
-            <Link className="link" to="/tra-cuu">
+            <Link className="link" to="/xoa-cache-ky">
               <span
                 style={{ paddingRight: "5px" }}
-                class="fa-solid fa-table-list"
+                className="fa-solid fa-table-list"
               ></span>
-              <span>Tra cứu MST mSMI</span>
+              <span>Xoá cache ký</span>
             </Link>
-          </li> */}
+          </li>
+
           {/* <li
             role="none"
             style={{ alignItems: "center" }}
