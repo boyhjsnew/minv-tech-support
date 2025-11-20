@@ -122,23 +122,25 @@ const NavBar = () => {
                 style={{ paddingRight: "5px" }}
                 className="fa-solid fa-table-list"
               ></span>
-              <span>Xoá cache ký</span>
+              <span>Gửi mail hàng loạt VPĐKĐĐ</span>
             </Link>
           </li>
 
-          {/* <li
+          <li
             role="none"
             style={{ alignItems: "center" }}
-            className={getLocation.pathname === "/branchreport" ? "active" : ""}
+            className={
+              getLocation.pathname === "/update-hoa-don" ? "active" : ""
+            }
           >
-            <Link className="link" to="/branchreport">
+            <Link className="link" to="/update-hoa-don">
               <span
                 style={{ paddingRight: "5px" }}
                 class="fa-solid fa-calendar-days"
               ></span>
-              <span>Báo cáo chi nhánh</span>
+              <span>Cập nhật hoá đơn hàng loạt</span>
             </Link>
-          </li> */}
+          </li>
           {/* <li
             role="none"
             style={{ alignItems: "center" }}

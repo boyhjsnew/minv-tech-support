@@ -20,6 +20,7 @@ import Tax from "./page/Tax";
 import Declaration from "./page/upgrade/ Declaration";
 import IntrustMultipe from "./page/upgrade/IntrustMultipe";
 import DeleteCache from "./page/cache/DeleteCache";
+import UpdateMuiltipe from "./page/UpdateMuiltipe";
 
 const Layout = () => {
   return (
@@ -66,6 +67,10 @@ const router = createBrowserRouter([
       {
         path: "/xoa-cache-ky",
         element: <DeleteCache />,
+      },
+      {
+        path: "/update-hoa-don",
+        element: <UpdateMuiltipe />,
       },
     ],
   },

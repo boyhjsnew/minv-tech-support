@@ -9,7 +9,8 @@ const breadcrumbLabels = {
   "/tra-cuu": "Tra cứu MST mSMI",
   "/branchreport": "Báo cáo chi nhánh",
   "/systemreport": "Báo cáo toàn hệ thống",
-  "/xoa-cache-ky": "Xoá cache ký",
+  "/xoa-cache-ky": "Gửi mail hàng loạt VPĐKĐĐ",
+  "/update-hoa-don": "Cập nhật hoá đơn hàng loạt",
   // Thêm các đường dẫn và nhãn khác nếu cần thiết
 };
 
