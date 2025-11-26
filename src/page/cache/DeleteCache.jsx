@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { Button } from "primereact/button";
 import { InputText } from "primereact/inputtext";
 import { Card } from "primereact/card";
@@ -9,6 +9,7 @@ import { Column } from "primereact/column";
 import { FileUpload } from "primereact/fileupload";
 import { ProgressBar } from "primereact/progressbar";
 import { Panel } from "primereact/panel";
+import { Dropdown } from "primereact/dropdown";
 import CryptoJS from "crypto-js";
 import * as XLSX from "xlsx";
 // theme
@@ -16,8 +17,24 @@ import "primereact/resources/themes/lara-light-cyan/theme.css";
 
 const KEY_EMAIL = "6DEA50C84B9506624BE9";
 const DEFAULT_KHIEU = ""; // Ký hiệu mặc định
+const STORAGE_KEY_FAILED_EMAILS = "failed_emails_list"; // Key để lưu danh sách email thất bại
+
+// Cấu hình các link và CCTBao ID tương ứng
+const API_CONFIGS = [
+  {
+    label: "Bienlai70 (bienlai70.vpdkddtphcm.com.vn)",
+    baseUrl: "http://bienlai70.vpdkddtphcm.com.vn",
+    cctbaoId: "b8b04fa8-d854-428f-89f9-738191796be5",
+  },
+  {
+    label: "SNNMTTPHCM (snnmttphcm.bienlai.com.vn)",
+    baseUrl: "http://snnmttphcm.bienlai.com.vn",
+    cctbaoId: "23ebeee9-d015-428d-93bd-cb3a64f7628b",
+  },
+];
 
 export default function DeleteCache() {
+  const [selectedApiConfig, setSelectedApiConfig] = useState(API_CONFIGS[0]); // Mặc định chọn link đầu tiên
   const [type, setType] = useState("Gửi hóa đơn");
   const [id, setId] = useState("");
   const [nguoiNhan, setNguoiNhan] = useState("");
@@ -33,9 +50,67 @@ export default function DeleteCache() {
     totalCount: 0,
     percentage: 0,
     status: "", // "Đang lấy dữ liệu...", "Đang gửi email...", "Đang đợi..."
+    successCount: 0, // Số email gửi thành công
+    failedCount: 0, // Số email gửi thất bại
+    isCompleted: false, // Đã hoàn thành chưa
   });
+  // Danh sách email đã gửi thất bại (lưu dạng Set để dễ check)
+  const [failedEmails, setFailedEmails] = useState(new Set());
   const toast = useRef(null);
   const fileUploadRef = useRef(null);
+
+  // Load danh sách email thất bại từ localStorage khi component mount
+  useEffect(() => {
+    try {
+      const savedFailedEmails = localStorage.getItem(STORAGE_KEY_FAILED_EMAILS);
+      if (savedFailedEmails) {
+        const emailsArray = JSON.parse(savedFailedEmails);
+        setFailedEmails(new Set(emailsArray));
+      }
+    } catch (error) {
+      console.error("Error loading failed emails:", error);
+    }
+  }, []);
+
+  // Tự động điền CCTBao ID khi chọn link
+  useEffect(() => {
+    if (selectedApiConfig) {
+      setCctbaoId(selectedApiConfig.cctbaoId);
+    }
+  }, [selectedApiConfig]);
+
+  // Hàm lưu danh sách email thất bại vào localStorage
+  const saveFailedEmails = (emailsSet) => {
+    try {
+      const emailsArray = Array.from(emailsSet);
+      localStorage.setItem(
+        STORAGE_KEY_FAILED_EMAILS,
+        JSON.stringify(emailsArray)
+      );
+      setFailedEmails(emailsSet);
+    } catch (error) {
+      console.error("Error saving failed emails:", error);
+    }
+  };
+
+  // Hàm thêm email vào danh sách thất bại
+  const addToFailedEmails = (email) => {
+    const newFailedEmails = new Set(failedEmails);
+    newFailedEmails.add(email);
+    saveFailedEmails(newFailedEmails);
+  };
+
+  // Hàm xóa tất cả email thất bại
+  const clearFailedEmails = () => {
+    localStorage.removeItem(STORAGE_KEY_FAILED_EMAILS);
+    setFailedEmails(new Set());
+    toast.current.show({
+      severity: "success",
+      summary: "Thành công",
+      detail: "Đã xóa danh sách email thất bại",
+      life: 3000,
+    });
+  };
 
   // Hàm format thời gian theo định dạng "DD/MM/YYYY HH"
   const formatDateTime = () => {
@@ -65,10 +140,12 @@ export default function DeleteCache() {
     }
 
     if (emailData.length === 0) {
+      console.log("sendEmailBatch: Không có dữ liệu để gửi email");
       return;
     }
 
     try {
+      console.log(`sendEmailBatch: Bắt đầu gửi ${emailData.length} email`);
       // Tính secret cho mỗi email và tạo payload
       const emailPayload = emailData.map((item) => ({
         id: item.id,
@@ -83,20 +160,23 @@ export default function DeleteCache() {
         type: type.trim(),
       };
 
-      const response = await fetch(
-        "http://bienlai70.vpdkddtphcm.com.vn/api/Invoice68/EmailMulti",
-        {
-          method: "POST",
-          headers: {
-            Authorization: "Bear O87316arj5+Od3Fqyy5hzdBfIuPk73eKqpAzBSvv8sY=",
-            Referer: "http://bienlai70.vpdkddtphcm.com.vn/",
-            "User-Agent":
-              "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(payload),
-        }
-      );
+      console.log("sendEmailBatch: Payload:", JSON.stringify(payload));
+
+      console.log("sendEmailBatch: Đang gửi request đến API...");
+      const apiUrl = `${selectedApiConfig.baseUrl}/api/Invoice68/EmailMulti`;
+      const response = await fetch(apiUrl, {
+        method: "POST",
+        headers: {
+          Authorization: "Bear O87316arj5+Od3Fqyy5hzdBfIuPk73eKqpAzBSvv8sY=",
+          Referer: `${selectedApiConfig.baseUrl}/`,
+          "User-Agent":
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      console.log(`sendEmailBatch: Response status: ${response.status}`);
 
       if (!response.ok) {
         // Thử đọc error message từ response nếu có
@@ -122,17 +202,37 @@ export default function DeleteCache() {
         const responseText = await response.text();
         if (responseText) {
           result = JSON.parse(responseText);
+          console.log(
+            "sendEmailBatch: Response result:",
+            JSON.stringify(result)
+          );
         } else {
           throw new Error("Response rỗng");
         }
       } catch (parseError) {
+        console.error("sendEmailBatch: Lỗi parse response:", parseError);
         throw new Error(`Không thể parse response: ${parseError.message}`);
       }
 
       if (result.code !== "00") {
+        console.error(
+          `sendEmailBatch: Gửi email thất bại. Code: ${result.code}, Message: ${result.message}`
+        );
+        // Lưu tất cả email trong batch này vào danh sách thất bại
+        emailData.forEach((item) => {
+          if (item.nguoi_nhan) {
+            addToFailedEmails(item.nguoi_nhan);
+            console.log(
+              `Đã thêm email thất bại vào danh sách: ${item.nguoi_nhan}`
+            );
+          }
+        });
         throw new Error(result.message || "Gửi email thất bại");
       }
 
+      console.log(
+        `sendEmailBatch: Gửi email thành công cho ${emailData.length} bản ghi`
+      );
       return result;
     } catch (error) {
       // Đảm bảo luôn throw error để được catch ở nơi gọi
@@ -173,6 +273,9 @@ export default function DeleteCache() {
       totalCount: 0,
       percentage: 0,
       status: "Đang khởi tạo...",
+      successCount: 0,
+      failedCount: 0,
+      isCompleted: false,
     });
 
     try {
@@ -184,6 +287,8 @@ export default function DeleteCache() {
       let batchNumber = 1;
       let hasDataFromAPI = false; // Theo dõi xem API có trả về data không
       let totalInvalidData = 0; // Đếm số bản ghi không hợp lệ
+      let successCount = 0; // Số email gửi thành công
+      let failedCount = 0; // Số email gửi thất bại
 
       while (hasMore) {
         try {
@@ -205,6 +310,11 @@ export default function DeleteCache() {
                 columnType: "bit",
                 value: "False",
               },
+              {
+                columnName: "tthai",
+                columnType: "nvarchar",
+                value: "Đã ký",
+              },
             ],
             tlbparam: [
               {
@@ -217,28 +327,26 @@ export default function DeleteCache() {
 
           let response;
           try {
-            response = await fetch(
-              "http://bienlai70.vpdkddtphcm.com.vn/api/Pattern/GetData",
-              {
-                method: "POST",
-                headers: {
-                  Accept: "*/*",
-                  "Accept-Language":
-                    "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7,fr-FR;q=0.6,fr;q=0.5",
-                  Authorization:
-                    "Bear O87316arj5+Od3Fqyy5hzdBfIuPk73eKqpAzBSvv8sY=",
-                  "Cache-Control": "no-cache",
-                  Connection: "keep-alive",
-                  "Content-Type": "application/json",
-                  Origin: "http://bienlai70.vpdkddtphcm.com.vn",
-                  Pragma: "no-cache",
-                  Referer: "http://bienlai70.vpdkddtphcm.com.vn/",
-                  "User-Agent":
-                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
-                },
-                body: JSON.stringify(payload),
-              }
-            );
+            const apiUrl = `${selectedApiConfig.baseUrl}/api/Pattern/GetData`;
+            response = await fetch(apiUrl, {
+              method: "POST",
+              headers: {
+                Accept: "*/*",
+                "Accept-Language":
+                  "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7,fr-FR;q=0.6,fr;q=0.5",
+                Authorization:
+                  "Bear O87316arj5+Od3Fqyy5hzdBfIuPk73eKqpAzBSvv8sY=",
+                "Cache-Control": "no-cache",
+                Connection: "keep-alive",
+                "Content-Type": "application/json",
+                Origin: selectedApiConfig.baseUrl,
+                Pragma: "no-cache",
+                Referer: `${selectedApiConfig.baseUrl}/`,
+                "User-Agent":
+                  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+              },
+              body: JSON.stringify(payload),
+            });
           } catch (fetchError) {
             console.error("Error fetching data:", fetchError);
             setProgress((prev) => ({
@@ -314,11 +422,25 @@ export default function DeleteCache() {
                 shdon: parseInt(item.shdon, 10) || 0,
                 khieu: item.khieu || DEFAULT_KHIEU,
                 index: currentStart + index + 1,
-              }));
+              }))
+              // Filter ra những email đã gửi thất bại trước đó
+              .filter((item) => !failedEmails.has(item.nguoi_nhan));
 
-            // Đếm số bản ghi không hợp lệ
+            // Đếm số bản ghi không hợp lệ (bao gồm cả email thất bại)
             const invalidCount = result.data.length - mappedData.length;
             totalInvalidData += invalidCount;
+
+            // Log để debug
+            const skippedFailedCount = result.data.filter(
+              (item) =>
+                item.email &&
+                item.hoadon68_id &&
+                item.shdon &&
+                failedEmails.has(item.email)
+            ).length;
+            console.log(
+              `Batch ${batchNumber}: Lấy được ${result.data.length} bản ghi, ${mappedData.length} bản ghi hợp lệ (đã bỏ qua ${skippedFailedCount} email thất bại)`
+            );
 
             if (mappedData.length === 0) {
               // Nếu không có dữ liệu hợp lệ trong batch này, kiểm tra xem còn batch khác không
@@ -359,13 +481,21 @@ export default function DeleteCache() {
 
             // Gửi email cho batch này
             try {
+              console.log(
+                `Bắt đầu gửi email batch ${currentBatchForSend} với ${mappedData.length} bản ghi`
+              );
               await sendEmailBatch(mappedData);
               totalSent += mappedData.length;
+              successCount += mappedData.length; // Cập nhật số email thành công
+              console.log(
+                `Đã gửi email thành công batch ${currentBatchForSend}`
+              );
 
               // Cập nhật tiến độ sau khi gửi thành công
               const finalTotalSent = totalSent;
               const finalTotalCount = totalCount;
               const finalBatchNum = batchNumber;
+              const finalSuccessCount = successCount; // Lưu vào biến local
               const percentage =
                 finalTotalCount > 0
                   ? Math.round((finalTotalSent / finalTotalCount) * 100)
@@ -375,6 +505,7 @@ export default function DeleteCache() {
                 currentSent: finalTotalSent,
                 percentage: percentage,
                 status: `Đã gửi batch ${finalBatchNum}: ${mappedData.length} hóa đơn`,
+                successCount: finalSuccessCount,
               }));
 
               toast.current.show({
@@ -387,6 +518,13 @@ export default function DeleteCache() {
               batchNumber++;
             } catch (emailError) {
               console.error("Error sending email batch:", emailError);
+              failedCount += mappedData.length; // Cập nhật số email thất bại
+              const finalFailedCount = failedCount; // Lưu vào biến local
+              // Cập nhật số email thất bại
+              setProgress((prev) => ({
+                ...prev,
+                failedCount: finalFailedCount,
+              }));
               toast.current.show({
                 severity: "error",
                 summary: "Lỗi gửi email",
@@ -452,17 +590,31 @@ export default function DeleteCache() {
         }
       }
 
-      // Thông báo hoàn thành
-      if (totalSent > 0) {
-        let detailMessage = `Đã gửi email thành công cho ${totalSent} hóa đơn`;
+      // Cập nhật trạng thái hoàn thành và hiển thị tổng kết
+      setProgress((prev) => ({
+        ...prev,
+        isCompleted: true,
+        status: "Hoàn thành!",
+        successCount: successCount,
+        failedCount: failedCount,
+      }));
+
+      // Thông báo hoàn thành với tổng kết
+      const totalProcessed = successCount + failedCount;
+
+      if (totalProcessed > 0) {
+        let detailMessage = `Tổng kết: Thành công ${successCount} email`;
+        if (failedCount > 0) {
+          detailMessage += `, Thất bại ${failedCount} email`;
+        }
         if (totalInvalidData > 0) {
           detailMessage += ` (${totalInvalidData} bản ghi không hợp lệ đã bỏ qua)`;
         }
         toast.current.show({
-          severity: "success",
+          severity: failedCount > 0 ? "warn" : "success",
           summary: "Hoàn thành",
           detail: detailMessage,
-          life: 5000,
+          life: 8000,
         });
       } else {
         // Phân biệt giữa "không có data" và "có data nhưng không hợp lệ"
@@ -772,20 +924,18 @@ export default function DeleteCache() {
 
       console.log("Email Payload:", payload);
 
-      const response = await fetch(
-        "http://bienlai70.vpdkddtphcm.com.vn/api/Invoice68/EmailMulti",
-        {
-          method: "POST",
-          headers: {
-            Authorization: "Bear O87316arj5+Od3Fqyy5hzdBfIuPk73eKqpAzBSvv8sY=",
-            Referer: "http://bienlai70.vpdkddtphcm.com.vn/",
-            "User-Agent":
-              "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(payload),
-        }
-      );
+      const apiUrl = `${selectedApiConfig.baseUrl}/api/Invoice68/EmailMulti`;
+      const response = await fetch(apiUrl, {
+        method: "POST",
+        headers: {
+          Authorization: "Bear O87316arj5+Od3Fqyy5hzdBfIuPk73eKqpAzBSvv8sY=",
+          Referer: `${selectedApiConfig.baseUrl}/`,
+          "User-Agent":
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -809,11 +959,21 @@ export default function DeleteCache() {
         setNguoiNhan("");
         setShdon(null);
         setEmailList([]);
-        setCctbaoId("");
+        // Không xóa CCTBao ID, giữ lại giá trị từ selectedApiConfig
+        setCctbaoId(selectedApiConfig.cctbaoId);
         if (fileUploadRef.current) {
           fileUploadRef.current.clear();
         }
       } else {
+        // Lưu tất cả email trong batch này vào danh sách thất bại
+        emailData.forEach((item) => {
+          if (item.nguoi_nhan) {
+            addToFailedEmails(item.nguoi_nhan);
+            console.log(
+              `Đã thêm email thất bại vào danh sách: ${item.nguoi_nhan}`
+            );
+          }
+        });
         throw new Error(result.message || "Gửi email thất bại");
       }
     } catch (error) {
@@ -835,6 +995,25 @@ export default function DeleteCache() {
 
       <Card title="Gửi Email Multi" className="mb-4">
         <div className="flex flex-column gap-4">
+          <div className="field">
+            <label htmlFor="apiConfig" className="font-bold">
+              Chọn Link API <span className="text-red-500">*</span>
+            </label>
+            <Dropdown
+              id="apiConfig"
+              value={selectedApiConfig}
+              options={API_CONFIGS}
+              onChange={(e) => setSelectedApiConfig(e.value)}
+              optionLabel="label"
+              placeholder="Chọn link API"
+              className="w-full"
+            />
+            <small className="text-600">
+              <i className="pi pi-info-circle mr-1"></i>
+              CCTBao ID sẽ tự động điền khi chọn link
+            </small>
+          </div>
+
           <div className="field">
             <label htmlFor="type" className="font-bold">
               Type <span className="text-red-500">*</span>
@@ -881,7 +1060,8 @@ export default function DeleteCache() {
           </div>
 
           {/* Hiển thị tiến độ */}
-          {(fetchingData || loading) && progress.totalCount > 0 && (
+          {((fetchingData || loading) && progress.totalCount > 0) ||
+          progress.isCompleted ? (
             <Panel header="Tiến độ xử lý" className="mb-3">
               <div className="flex flex-column gap-3">
                 <div>
@@ -915,6 +1095,50 @@ export default function DeleteCache() {
                   </div>
                 </div>
 
+                {/* Hiển thị tổng kết khi hoàn thành */}
+                {progress.isCompleted && (
+                  <div className="p-3 border-1 border-200 border-round bg-green-50">
+                    <div className="flex flex-column gap-2">
+                      <div className="flex align-items-center gap-2">
+                        <i className="pi pi-check-circle text-green-600"></i>
+                        <span className="font-bold text-lg">
+                          Tổng kết kết quả:
+                        </span>
+                      </div>
+                      <div className="grid">
+                        <div className="col-12 md:col-6">
+                          <div className="flex flex-column">
+                            <span className="text-600 text-sm mb-1">
+                              Thành công
+                            </span>
+                            <span className="font-bold text-xl text-green-600">
+                              {progress.successCount} email
+                            </span>
+                          </div>
+                        </div>
+                        <div className="col-12 md:col-6">
+                          <div className="flex flex-column">
+                            <span className="text-600 text-sm mb-1">
+                              Thất bại
+                            </span>
+                            <span className="font-bold text-xl text-red-600">
+                              {progress.failedCount} email
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-2">
+                        <span className="text-600 text-sm">
+                          Tổng cộng:{" "}
+                          <strong>
+                            {progress.successCount + progress.failedCount} email
+                          </strong>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div className="p-2 border-1 border-200 border-round bg-blue-50">
                   <small className="text-600">
                     <i className="pi pi-info-circle mr-1"></i>
@@ -923,15 +1147,57 @@ export default function DeleteCache() {
                 </div>
               </div>
             </Panel>
+          ) : null}
+
+          {/* Hiển thị danh sách email thất bại */}
+          {failedEmails.size > 0 && (
+            <Panel
+              header={
+                <div className="flex justify-content-between align-items-center w-full">
+                  <span>
+                    Danh sách Email Thất Bại ({failedEmails.size} email)
+                  </span>
+                  <Button
+                    label="Xóa Danh Sách"
+                    icon="pi pi-trash"
+                    onClick={clearFailedEmails}
+                    className="p-button-danger p-button-sm"
+                    size="small"
+                  />
+                </div>
+              }
+              className="mb-3"
+            >
+              <div className="flex flex-column gap-2">
+                <div className="p-2 border-1 border-200 border-round bg-red-50">
+                  <small className="text-600">
+                    <i className="pi pi-exclamation-triangle mr-1"></i>
+                    Các email này đã gửi thất bại trước đó và sẽ được bỏ qua khi
+                    lấy dữ liệu tự động
+                  </small>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {Array.from(failedEmails).map((email, index) => (
+                    <span
+                      key={index}
+                      className="p-2 border-1 border-200 border-round bg-white"
+                      style={{ fontSize: "0.875rem" }}
+                    >
+                      {email}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </Panel>
           )}
 
-          <div className="flex align-items-center gap-2">
+          {/* <div className="flex align-items-center gap-2">
             <div className="flex-1 border-top-1 border-300"></div>
             <span className="text-600">HOẶC</span>
             <div className="flex-1 border-top-1 border-300"></div>
-          </div>
+          </div> */}
 
-          <div className="field">
+          {/* <div className="field">
             <div className="flex justify-content-between align-items-center mb-2">
               <label className="font-bold m-0">Import File Excel</label>
               <Button
@@ -959,7 +1225,7 @@ export default function DeleteCache() {
               <br />
               Hoặc có thể nhập thủ công bên dưới
             </small>
-          </div>
+          </div> */}
 
           {emailList.length > 0 && (
             <div className="field">
@@ -982,13 +1248,13 @@ export default function DeleteCache() {
             </div>
           )}
 
-          <div className="flex align-items-center gap-2">
+          {/* <div className="flex align-items-center gap-2">
             <div className="flex-1 border-top-1 border-300"></div>
             <span className="text-600">HOẶC</span>
             <div className="flex-1 border-top-1 border-300"></div>
-          </div>
+          </div> */}
 
-          <div className="field">
+          {/* <div className="field">
             <label htmlFor="id" className="font-bold">
               ID <span className="text-red-500">*</span>
             </label>
@@ -1026,9 +1292,9 @@ export default function DeleteCache() {
               className="w-full"
               min={1}
             />
-          </div>
+          </div> */}
 
-          <div className="field">
+          {/* <div className="field">
             <small className="text-600">
               <i className="pi pi-info-circle mr-1"></i>
               Ký hiệu: <strong>{DEFAULT_KHIEU || "(Mặc định)"}</strong>
@@ -1036,9 +1302,9 @@ export default function DeleteCache() {
               Secret sẽ được tự động tính từ email người nhận, KEY_EMAIL và thời
               gian hiện tại
             </small>
-          </div>
+          </div> */}
 
-          <Button
+          {/* <Button
             label={
               emailList.length > 0
                 ? `Gửi Email (${emailList.length} bản ghi)`
@@ -1053,7 +1319,7 @@ export default function DeleteCache() {
               (emailList.length === 0 &&
                 (!id.trim() || !nguoiNhan.trim() || !shdon))
             }
-          />
+          /> */}
         </div>
       </Card>
     </div>
