@@ -446,11 +446,23 @@ export default function DeleteCache() {
               // Nếu không có dữ liệu hợp lệ trong batch này, kiểm tra xem còn batch khác không
               // Sử dụng totalCount đã được cập nhật hoặc result.total_count
               const currentTotalCount = totalCount || result.total_count || 0;
+
+              // Chỉ dừng nếu:
+              // 1. API trả về rỗng (result.data.length === 0) HOẶC
+              // 2. Đã lấy hết (start + count >= totalCount) HOẶC
+              // 3. totalCount = 0 (không có dữ liệu)
+              const apiReturnedEmpty = result.data.length === 0;
+              const hasReachedEnd =
+                currentTotalCount > 0 && start + count >= currentTotalCount;
+
               if (
-                result.data.length < count ||
-                start + count >= currentTotalCount ||
+                apiReturnedEmpty ||
+                hasReachedEnd ||
                 currentTotalCount === 0
               ) {
+                console.log(
+                  `Batch ${batchNumber} không có dữ liệu hợp lệ và đã hết dữ liệu: apiReturnedEmpty=${apiReturnedEmpty}, hasReachedEnd=${hasReachedEnd}, currentTotalCount=${currentTotalCount}`
+                );
                 hasMore = false;
                 break;
               } else {
@@ -459,6 +471,9 @@ export default function DeleteCache() {
                 batchNumber++;
                 const currentBatchNum = batchNumber; // Lưu vào biến local để tránh unsafe reference
                 const prevBatchNum = batchNumber - 1;
+                console.log(
+                  `Batch ${prevBatchNum} không có dữ liệu hợp lệ, tiếp tục batch ${currentBatchNum}...`
+                );
                 setProgress((prev) => ({
                   ...prev,
                   status: `Đang đợi 5 giây trước batch ${currentBatchNum}... (Batch ${prevBatchNum} không có dữ liệu hợp lệ)`,
@@ -536,12 +551,25 @@ export default function DeleteCache() {
             }
 
             // Kiểm tra xem còn dữ liệu không
-            // Nếu totalCount đã được set, kiểm tra dựa trên totalCount
-            // Nếu chưa, kiểm tra dựa trên số lượng data trả về
+            // Chỉ dừng khi:
+            // 1. API trả về rỗng (result.data.length === 0) HOẶC
+            // 2. Đã lấy hết tất cả dữ liệu (start + count >= totalCount) HOẶC
+            // 3. API trả về ít hơn count VÀ đã đạt đến totalCount
+            const currentTotalCount = totalCount || result.total_count || 0;
+            const hasReachedEnd =
+              currentTotalCount > 0 && start + count >= currentTotalCount;
+            const apiReturnedEmpty = result.data.length === 0;
+            const apiReturnedLessThanCount =
+              result.data.length > 0 && result.data.length < count;
+
+            // Chỉ dừng nếu:
+            // - API trả về rỗng HOẶC
+            // - Đã lấy hết (start + count >= totalCount) HOẶC
+            // - API trả về ít hơn count VÀ đã đạt đến totalCount (batch cuối cùng)
             const shouldStop =
-              result.data.length < count ||
-              (totalCount > 0 && start + result.data.length >= totalCount) ||
-              (totalCount > 0 && start + count >= totalCount);
+              apiReturnedEmpty ||
+              hasReachedEnd ||
+              (apiReturnedLessThanCount && hasReachedEnd);
 
             if (shouldStop) {
               hasMore = false;
@@ -549,6 +577,9 @@ export default function DeleteCache() {
                 ...prev,
                 status: "Hoàn thành!",
               }));
+              console.log(
+                `Dừng vòng lặp: apiReturnedEmpty=${apiReturnedEmpty}, hasReachedEnd=${hasReachedEnd}, start=${start}, count=${count}, totalCount=${currentTotalCount}`
+              );
             } else {
               start += count;
               // Cập nhật trạng thái: Đang đợi
@@ -557,6 +588,9 @@ export default function DeleteCache() {
                 ...prev,
                 status: `Đang đợi 5 giây trước batch ${nextBatchNum}...`,
               }));
+              console.log(
+                `Tiếp tục batch tiếp theo: start=${start}, totalCount=${currentTotalCount}, batchNumber=${nextBatchNum}`
+              );
               // Đợi 5 giây trước khi lấy batch tiếp theo
               await new Promise((resolve) => setTimeout(resolve, 5000));
             }
@@ -591,30 +625,38 @@ export default function DeleteCache() {
       }
 
       // Cập nhật trạng thái hoàn thành và hiển thị tổng kết
+      const totalProcessed = successCount + failedCount;
+      const remainingCount = totalCount - totalProcessed;
+
       setProgress((prev) => ({
         ...prev,
         isCompleted: true,
-        status: "Hoàn thành!",
+        status:
+          remainingCount > 0
+            ? `Hoàn thành! (Còn ${remainingCount} hóa đơn chưa xử lý)`
+            : "Hoàn thành!",
         successCount: successCount,
         failedCount: failedCount,
       }));
 
       // Thông báo hoàn thành với tổng kết
-      const totalProcessed = successCount + failedCount;
-
       if (totalProcessed > 0) {
         let detailMessage = `Tổng kết: Thành công ${successCount} email`;
         if (failedCount > 0) {
           detailMessage += `, Thất bại ${failedCount} email`;
         }
+        if (remainingCount > 0) {
+          detailMessage += `\n⚠️ Cảnh báo: Còn ${remainingCount} hóa đơn chưa được xử lý (có thể do không hợp lệ hoặc đã bị filter)`;
+        }
         if (totalInvalidData > 0) {
-          detailMessage += ` (${totalInvalidData} bản ghi không hợp lệ đã bỏ qua)`;
+          detailMessage += `\n(${totalInvalidData} bản ghi không hợp lệ đã bỏ qua)`;
         }
         toast.current.show({
-          severity: failedCount > 0 ? "warn" : "success",
-          summary: "Hoàn thành",
+          severity: failedCount > 0 || remainingCount > 0 ? "warn" : "success",
+          summary:
+            remainingCount > 0 ? "Hoàn thành (Có cảnh báo)" : "Hoàn thành",
           detail: detailMessage,
-          life: 8000,
+          life: 10000,
         });
       } else {
         // Phân biệt giữa "không có data" và "có data nhưng không hợp lệ"
@@ -1129,11 +1171,29 @@ export default function DeleteCache() {
                       </div>
                       <div className="mt-2">
                         <span className="text-600 text-sm">
-                          Tổng cộng:{" "}
+                          Tổng cộng đã xử lý:{" "}
                           <strong>
                             {progress.successCount + progress.failedCount} email
                           </strong>
                         </span>
+                        {progress.totalCount > 0 &&
+                          progress.totalCount >
+                            progress.successCount + progress.failedCount && (
+                            <div className="mt-2 p-2 border-1 border-200 border-round bg-yellow-50">
+                              <span className="text-600 text-sm">
+                                <i className="pi pi-exclamation-triangle text-yellow-600 mr-1"></i>
+                                Còn lại:{" "}
+                                <strong className="text-yellow-700">
+                                  {progress.totalCount -
+                                    (progress.successCount +
+                                      progress.failedCount)}{" "}
+                                  hóa đơn
+                                </strong>{" "}
+                                chưa được xử lý (có thể do không hợp lệ hoặc đã
+                                bị filter)
+                              </span>
+                            </div>
+                          )}
                       </div>
                     </div>
                   </div>
