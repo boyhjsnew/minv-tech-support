@@ -23,4 +23,10 @@ export const MenuItems = [
     cName: "dropdown-link",
     icon: "icon-sub fa-regular fa-circle",
   },
+  {
+    title: "Hỗ trợ kỹ thuật",
+    path: "/ho-tro-ky-thuat",
+    cName: "dropdown-link",
+    icon: "icon-sub fa-regular fa-circle",
+  },
 ];
