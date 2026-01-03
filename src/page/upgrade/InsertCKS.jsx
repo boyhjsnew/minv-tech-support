@@ -119,7 +119,79 @@ const InsertCKS = () => {
         );
 
         setLoad(false);
-        window.open(`https://${taxCode}.minvoice.net/#/`);
+
+        // Mở trang 2.0 và inject script để tự động lưu cookies
+        const newWindow = window.open(
+          `https://${taxCode}.minvoice.net/#/`,
+          "_blank"
+        );
+
+        // Inject script để tự động lưu cookies vào localStorage
+        if (newWindow) {
+          setTimeout(() => {
+            try {
+              // Tạo script để lưu cookies
+              const script = `
+(function() {
+  const cookies = document.cookie;
+  const storageKey = 'minv_tool_cookies_${taxCode}';
+  if (cookies && cookies.length > 0) {
+    localStorage.setItem(storageKey, cookies);
+    console.log('✅ Đã tự động lưu cookies vào localStorage');
+    if (window.opener) {
+      window.opener.postMessage({
+        type: 'COOKIES_SAVED',
+        taxCode: '${taxCode}',
+        cookies: cookies
+      }, '*');
+    }
+  }
+  
+  // Tự động cập nhật khi cookies thay đổi (khi user login)
+  const checkCookies = setInterval(() => {
+    const currentCookies = document.cookie;
+    if (currentCookies && currentCookies.length > 0) {
+      localStorage.setItem(storageKey, currentCookies);
+      if (window.opener) {
+        try {
+          window.opener.postMessage({
+            type: 'COOKIES_SAVED',
+            taxCode: '${taxCode}',
+            cookies: currentCookies
+          }, '*');
+        } catch (e) {}
+      }
+    }
+  }, 2000);
+  
+  setTimeout(() => clearInterval(checkCookies), 300000);
+})();
+              `;
+              newWindow.eval(script);
+            } catch (e) {
+              // Cross-origin, không thể inject trực tiếp
+              // User cần chạy script thủ công hoặc cookies sẽ được lưu khi có
+              console.log(
+                "⚠️ Không thể inject script do cross-origin. Cookies sẽ được lưu khi user đăng nhập."
+              );
+            }
+          }, 2000);
+
+          // Lắng nghe message từ window con
+          const messageHandler = (event) => {
+            if (
+              event.data &&
+              event.data.type === "COOKIES_SAVED" &&
+              event.data.taxCode === taxCode
+            ) {
+              const cookies = event.data.cookies;
+              // Lưu vào localStorage của tool
+              localStorage.setItem(`minv_tool_cookies_${taxCode}`, cookies);
+              console.log("✅ Đã nhận cookies từ trang 2.0:", cookies);
+            }
+          };
+          window.addEventListener("message", messageHandler);
+        }
 
         // Chuyển đổi dữ liệu theo định dạng mong muốn
         const mappedData = mapDataCKS(listCKSResponse.data.data);
@@ -133,8 +205,50 @@ const InsertCKS = () => {
   };
   const handleInsertCKS = async () => {
     if (cookies != null && stillValid.length > 0) {
-      const insertCKS = await inserCKSnewAPP(stillValid, taxCode, cookies);
-      toast.success(<ToastNotify status={0} message={insertCKS} />);
+      try {
+        setLoad(true);
+        const results = await inserCKSnewAPP(stillValid, taxCode, cookies);
+
+        // Đếm số lượng thành công và thất bại
+        const successCount = results.filter((r) => r?.success).length;
+        const failCount = results.filter((r) => !r?.success).length;
+
+        if (successCount > 0) {
+          toast.success(
+            <ToastNotify
+              status={0}
+              message={`Đã thêm thành công ${successCount} CKS${
+                failCount > 0 ? `, thất bại ${failCount}` : ""
+              }`}
+            />,
+            { style: styleSuccess }
+          );
+        } else {
+          toast.error(
+            <ToastNotify
+              status={-1}
+              message={`Thất bại khi thêm CKS. Vui lòng kiểm tra cookies và thử lại.`}
+            />,
+            { style: styleError }
+          );
+        }
+      } catch (error) {
+        console.error("Error inserting CKS:", error);
+        toast.error(
+          <ToastNotify status={-1} message={`Lỗi: ${error.message}`} />,
+          { style: styleError }
+        );
+      } finally {
+        setLoad(false);
+      }
+    } else {
+      toast.warning(
+        <ToastNotify
+          status={-1}
+          message="Vui lòng lấy cookies từ trình duyệt và đảm bảo có CKS còn hạn"
+        />,
+        { style: styleError }
+      );
     }
   };
   const copyToClipboard = (text) => {

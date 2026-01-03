@@ -59,6 +59,36 @@ export default function DeleteCache() {
   const toast = useRef(null);
   const fileUploadRef = useRef(null);
 
+  // Thêm state mới sau dòng 58 (sau failedEmails)
+  const [hoadon68IdList, setHoadon68IdList] = useState([]);
+  const [sendingById, setSendingById] = useState(false);
+  const [progressById, setProgressById] = useState({
+    currentBatch: 0,
+    totalBatches: 0,
+    currentSent: 0,
+    totalCount: 0,
+    percentage: 0,
+    status: "",
+    successCount: 0,
+    failedCount: 0,
+    isCompleted: false,
+  });
+  const fileUploadByIdRef = useRef(null);
+
+  // Thêm state mới sau dòng 65 (sau progressById)
+  const [failedEmailsById, setFailedEmailsById] = useState([]); // Danh sách email lỗi: [{email, error, hoadon68_id, batchNumber}]
+
+  // State cho chức năng export JSON to Excel
+  const [jsonItemsData, setJsonItemsData] = useState([]); // Danh sách items đã extract từ JSON
+  const [processingJson, setProcessingJson] = useState(false); // Đang xử lý file JSON
+  const [jsonProgress, setJsonProgress] = useState({
+    status: "",
+    processed: 0,
+    total: 0,
+    percentage: 0,
+  }); // Progress khi xử lý file JSON lớn
+  const fileUploadJsonRef = useRef(null);
+
   // Load danh sách email thất bại từ localStorage khi component mount
   useEffect(() => {
     try {
@@ -526,7 +556,7 @@ export default function DeleteCache() {
               toast.current.show({
                 severity: "success",
                 summary: "Thành công",
-                detail: `Đã gửi email batch ${batchNumber}: ${mappedData.length} hóa đơn (Tổng: ${totalSent}/${totalCount})`,
+                detail: `Đã gửi email batch ${batchNumber}: ${mappedData.length} hóa đơn (${totalSent}/${totalCount})`,
                 life: 3000,
               });
 
@@ -646,7 +676,8 @@ export default function DeleteCache() {
           detailMessage += `, Thất bại ${failedCount} email`;
         }
         if (remainingCount > 0) {
-          detailMessage += `\n⚠️ Cảnh báo: Còn ${remainingCount} hóa đơn chưa được xử lý (có thể do không hợp lệ hoặc đã bị filter)`;
+          detailMessage += `\n⚠️ Cảnh báo: Còn ${remainingCount} hóa đơn chưa được xử lý (có thể do không hợp lệ hoặc đã
+                                bị filter)`;
         }
         if (totalInvalidData > 0) {
           detailMessage += `\n(${totalInvalidData} bản ghi không hợp lệ đã bỏ qua)`;
@@ -873,6 +904,1007 @@ export default function DeleteCache() {
     };
 
     reader.readAsArrayBuffer(file);
+  };
+
+  // Sửa lại hàm handleImportExcelByIdOnly - thêm shdon và khieu (thay thế từ dòng 923 đến 966)
+  // Parse dữ liệu từ Excel - cần hoadon68_id, email, shdon, khieu
+  const handleImportExcelByIdOnly = (event) => {
+    const file = event.files[0];
+    if (!file) {
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: "array" });
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, { raw: false });
+
+        if (jsonData.length === 0) {
+          toast.current.show({
+            severity: "warn",
+            summary: "Cảnh báo",
+            detail: "File Excel không có dữ liệu",
+            life: 3000,
+          });
+          return;
+        }
+
+        // Parse dữ liệu từ Excel - cần hoadon68_id, email, shdon, khieu
+        const parsedData = jsonData
+          .map((row, index) => {
+            const keys = Object.keys(row);
+
+            // Tìm cột ID (ưu tiên theo thứ tự)
+            let id = "";
+            for (const key of keys) {
+              const lowerKey = key.toLowerCase();
+              if (
+                lowerKey.includes("hoadon68_id") ||
+                lowerKey.includes("hoadon68") ||
+                (lowerKey.includes("id") && !lowerKey.includes("email")) ||
+                keys.indexOf(key) === 0
+              ) {
+                id = row[key];
+                break;
+              }
+            }
+            if (!id && keys.length > 0) id = Object.values(row)[0];
+
+            // Tìm cột Email
+            let email = "";
+            for (const key of keys) {
+              const lowerKey = key.toLowerCase();
+              if (
+                lowerKey.includes("email") ||
+                lowerKey.includes("nguoi") ||
+                lowerKey.includes("người") ||
+                keys.indexOf(key) === 1
+              ) {
+                email = row[key];
+                break;
+              }
+            }
+            if (!email && keys.length > 1) email = Object.values(row)[1];
+
+            // Tìm cột Số Hóa Đơn (shdon) và đọc text trực tiếp từ cell
+            let shdonColumnIndex = -1;
+            let shdon = null;
+
+            // Log để debug (chỉ log row đầu tiên)
+            if (index === 0) {
+              console.log("Excel columns:", keys);
+            }
+
+            // Ưu tiên tìm theo tên cột chính xác (tránh match với cột ID)
+            for (const key of keys) {
+              const lowerKey = key.toLowerCase();
+              // Tìm cột có chứa "số hóa đơn" hoặc "shdon" nhưng KHÔNG phải cột ID
+              if (
+                (lowerKey.includes("số") &&
+                  lowerKey.includes("hóa") &&
+                  lowerKey.includes("đơn")) ||
+                (lowerKey.includes("so") &&
+                  lowerKey.includes("hoa") &&
+                  lowerKey.includes("don")) ||
+                lowerKey === "shdon" ||
+                (lowerKey.includes("shdon") && !lowerKey.includes("hoadon68"))
+              ) {
+                // Đảm bảo không phải cột ID (không phải cột đầu tiên và không chứa "id" hoặc "hoadon68")
+                const keyIndex = keys.indexOf(key);
+                if (
+                  keyIndex !== 0 &&
+                  !lowerKey.includes("hoadon68") &&
+                  !(lowerKey === "id")
+                ) {
+                  shdon = row[key];
+                  shdonColumnIndex = keyIndex;
+                  if (index === 0) {
+                    console.log(
+                      `Tìm thấy cột Số Hóa Đơn: "${key}" tại index ${keyIndex}`
+                    );
+                  }
+                  break;
+                }
+              }
+            }
+
+            // Nếu không tìm thấy theo tên, dùng cột thứ 3 (index 2) - theo thứ tự: ID, Email, Số Hóa Đơn
+            if (shdonColumnIndex === -1 && keys.length > 2) {
+              shdon = Object.values(row)[2];
+              shdonColumnIndex = 2;
+              if (index === 0) {
+                console.log(
+                  `Không tìm thấy cột theo tên, dùng cột index 2 (cột thứ 3)`
+                );
+              }
+            }
+
+            // Đọc text trực tiếp từ cell Excel để lấy giá trị đúng
+            let shdonValue = 0;
+            if (shdonColumnIndex >= 0) {
+              // Tìm cell address: row = index + 2 (vì có header row và index bắt đầu từ 0)
+              // col = shdonColumnIndex (A=0, B=1, C=2, ...)
+              const rowNum = index + 2; // +2 vì có header row (row 1) và index bắt đầu từ 0
+              const cellAddress = XLSX.utils.encode_cell({
+                r: rowNum,
+                c: shdonColumnIndex,
+              });
+
+              // Lấy cell từ worksheet
+              const cell = worksheet[cellAddress];
+              if (cell) {
+                // Ưu tiên lấy text từ cell (.w) - đây là giá trị hiển thị trong Excel
+                // Nếu không có .w, thử lấy từ .v và convert sang string
+                let cellText = null;
+                if (cell.w) {
+                  // .w là text value - giữ nguyên như Excel hiển thị
+                  cellText = cell.w;
+                } else if (cell.v !== null && cell.v !== undefined) {
+                  // Nếu không có .w, dùng .v nhưng convert sang string để tránh scientific notation
+                  cellText = String(cell.v);
+                }
+
+                // Log để debug (chỉ log 3 item đầu)
+                if (index < 3) {
+                  console.log(`Row ${rowNum}, Cell ${cellAddress}:`, {
+                    cell_w: cell.w,
+                    cell_v: cell.v,
+                    cell_v_type: typeof cell.v,
+                    cellText: cellText,
+                    shdonColumnIndex: shdonColumnIndex,
+                  });
+                }
+
+                if (cellText) {
+                  // Loại bỏ khoảng trắng và ký tự đặc biệt, chỉ giữ số
+                  const cleanText = cellText.trim().replace(/[^\d]/g, "");
+                  if (cleanText) {
+                    shdonValue = parseInt(cleanText, 10) || 0;
+                  }
+                }
+              } else if (index < 3) {
+                // Log nếu không tìm thấy cell
+                console.warn(
+                  `Không tìm thấy cell ${cellAddress} cho row ${rowNum}, column ${shdonColumnIndex}`
+                );
+              }
+            }
+
+            // Nếu không đọc được từ cell (shdonValue vẫn = 0), fallback về giá trị từ jsonData
+            if (
+              shdonValue === 0 &&
+              shdon !== null &&
+              shdon !== undefined &&
+              shdon !== ""
+            ) {
+              // Nếu là string, parse trực tiếp
+              if (typeof shdon === "string") {
+                const cleanText = shdon.trim().replace(/[^\d]/g, "");
+                if (cleanText) {
+                  shdonValue = parseInt(cleanText, 10) || 0;
+                }
+              } else if (typeof shdon === "number") {
+                // Nếu là số, kiểm tra xem có phải scientific notation không
+                const shdonStr = String(shdon);
+                if (shdonStr.includes("e") || shdonStr.includes("E")) {
+                  // Nếu là scientific notation, không dùng vì sẽ mất độ chính xác
+                  // Giữ nguyên 0 và log warning
+                  console.warn(
+                    `Số hóa đơn bị scientific notation: ${shdon} - không thể parse chính xác`
+                  );
+                } else {
+                  shdonValue = shdon;
+                }
+              }
+            }
+
+            // Tìm cột Ký Hiệu (khieu)
+            let khieu = "";
+            for (const key of keys) {
+              const lowerKey = key.toLowerCase();
+              if (
+                lowerKey.includes("ký") ||
+                lowerKey.includes("ky") ||
+                lowerKey.includes("hiệu") ||
+                lowerKey.includes("hieu") ||
+                lowerKey.includes("khieu") ||
+                keys.indexOf(key) === 3
+              ) {
+                khieu = row[key];
+                break;
+              }
+            }
+            if (!khieu && keys.length > 3) khieu = Object.values(row)[3];
+
+            return {
+              id: String(id || "").trim(),
+              email: String(email || "").trim(),
+              shdon: shdonValue,
+              khieu: String(khieu || "").trim() || DEFAULT_KHIEU,
+              index: index + 1,
+            };
+          })
+          .filter((item) => item.id && item.id.length > 0);
+
+        if (parsedData.length === 0) {
+          toast.current.show({
+            severity: "warn",
+            summary: "Cảnh báo",
+            detail:
+              "Không tìm thấy dữ liệu hợp lệ trong file Excel. Vui lòng kiểm tra format: Hoadon68_ID, Email, Số Hóa Đơn, Ký Hiệu",
+            life: 5000,
+          });
+          return;
+        }
+
+        // Thêm log để debug khi import (sau dòng 1018, trước setHoadon68IdList)
+        // Log một vài record đầu để kiểm tra
+        if (parsedData.length > 0) {
+          console.log("=== DANH SÁCH ĐÃ IMPORT (10 item đầu tiên) ===");
+          console.table(
+            parsedData.slice(0, 10).map((item, idx) => ({
+              STT: idx + 1,
+              Hoadon68_ID: item.id,
+              Email: item.email,
+              "Số Hóa Đơn": item.shdon,
+              "Ký Hiệu": item.khieu,
+            }))
+          );
+          console.log(`Tổng số bản ghi: ${parsedData.length}`);
+          console.log(
+            `Số bản ghi có email hợp lệ: ${
+              parsedData.filter(
+                (item) => item.email && isValidEmail(item.email)
+              ).length
+            }`
+          );
+          console.log(
+            `Số bản ghi có shdon > 0: ${
+              parsedData.filter((item) => item.shdon > 0).length
+            }`
+          );
+        }
+
+        setHoadon68IdList(parsedData);
+        toast.current.show({
+          severity: "success",
+          summary: "Thành công",
+          detail: `Đã import ${parsedData.length} bản ghi từ file Excel (${
+            parsedData.filter((item) => item.email).length
+          } có email)`,
+          life: 3000,
+        });
+      } catch (error) {
+        console.error("Error parsing Excel:", error);
+        toast.current.show({
+          severity: "error",
+          summary: "Lỗi",
+          detail: "Có lỗi xảy ra khi đọc file Excel",
+          life: 3000,
+        });
+      }
+    };
+
+    reader.readAsArrayBuffer(file);
+  };
+
+  // Thêm hàm validate email sau hàm calculateSecret (sau dòng 153)
+  // Hàm validate email format - chỉ chấp nhận email hợp lệ
+  const isValidEmail = (email) => {
+    if (!email || typeof email !== "string") return false;
+    const trimmedEmail = email.trim();
+    // Kiểm tra email có chứa @ và có format cơ bản hợp lệ (có @ và có domain)
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(trimmedEmail);
+  };
+
+  // Sửa lại phần tạo payload trong handleSendEmailByIdOnly (thay thế từ dòng 1114 đến 1140)
+  const handleSendEmailByIdOnly = async () => {
+    if (!type.trim()) {
+      toast.current.show({
+        severity: "warn",
+        summary: "Cảnh báo",
+        detail: "Vui lòng nhập Type",
+        life: 3000,
+      });
+      return;
+    }
+
+    if (hoadon68IdList.length === 0) {
+      toast.current.show({
+        severity: "warn",
+        summary: "Cảnh báo",
+        detail: "Vui lòng import file Excel chứa danh sách hoadon68_id",
+        life: 3000,
+      });
+      return;
+    }
+
+    setSendingById(true);
+    setLoading(true);
+
+    // Reset progress và danh sách lỗi
+    setProgressById({
+      currentBatch: 0,
+      totalBatches: 0,
+      currentSent: 0,
+      totalCount: hoadon68IdList.length,
+      percentage: 0,
+      status: "Đang khởi tạo...",
+      successCount: 0,
+      failedCount: 0,
+      isCompleted: false,
+    });
+    setFailedEmailsById([]); // Reset danh sách lỗi khi bắt đầu mới
+
+    try {
+      const batchSize = 50; // Gửi 50 ID mỗi lần
+      let allFailedIds = new Set(); // Set để lưu các hoadon68_id đã lỗi
+      let allFailedEmails = new Set(); // Set để lưu các email đã lỗi
+      let successCount = 0;
+      let failedCount = 0;
+      let currentFailedEmails = []; // Danh sách email lỗi trong session này
+
+      // Lọc bỏ các ID/Email đã lỗi từ danh sách ban đầu
+      let remainingIds = hoadon68IdList.filter(
+        (item) =>
+          !allFailedIds.has(item.id) &&
+          (!item.email || !allFailedEmails.has(item.email.toLowerCase()))
+      );
+      const totalBatches = Math.ceil(remainingIds.length / batchSize);
+
+      setProgressById((prev) => ({
+        ...prev,
+        totalBatches: totalBatches,
+      }));
+
+      let processedCount = 0;
+      while (processedCount < remainingIds.length) {
+        // Filter lại để loại bỏ các email/ID đã thất bại trong các batch trước
+        const filteredRemainingIds = remainingIds.filter(
+          (item) =>
+            !allFailedIds.has(item.id) &&
+            (!item.email || !allFailedEmails.has(item.email.toLowerCase()))
+        );
+
+        // Nếu không còn item nào, dừng vòng lặp
+        if (filteredRemainingIds.length === 0) {
+          console.log("Đã loại bỏ tất cả email thất bại, dừng gửi email");
+          break;
+        }
+
+        // Lấy batch tiếp theo từ danh sách đã filter
+        const batch = filteredRemainingIds.slice(0, batchSize);
+        const batchNumber = Math.floor(processedCount / batchSize) + 1;
+        currentFailedEmails = []; // Reset danh sách lỗi cho batch này
+
+        // Cập nhật remainingIds để loại bỏ các item đã xử lý
+        remainingIds = filteredRemainingIds.slice(batchSize);
+        processedCount += batch.length;
+
+        setProgressById((prev) => ({
+          ...prev,
+          currentBatch: batchNumber,
+          status: `Đang gửi email batch ${batchNumber}/${totalBatches}...`,
+        }));
+
+        try {
+          // Filter bỏ các record không có email hợp lệ
+          const validBatch = batch.filter((item) => {
+            if (!item.email || !isValidEmail(item.email)) {
+              // Lưu vào danh sách lỗi
+              const failedEmail = {
+                email: item.email || "N/A",
+                error: "Email không hợp lệ hoặc không phải định dạng email",
+                hoadon68_id: item.id,
+                batchNumber: batchNumber,
+              };
+              currentFailedEmails.push(failedEmail);
+              allFailedIds.add(item.id);
+              if (item.email) {
+                allFailedEmails.add(item.email.toLowerCase());
+              }
+              return false;
+            }
+            return true;
+          });
+
+          // Nếu không còn record hợp lệ nào trong batch, bỏ qua batch này
+          if (validBatch.length === 0) {
+            console.log(`Batch ${batchNumber}: Không có email hợp lệ, bỏ qua`);
+            failedCount += batch.length;
+            setFailedEmailsById((prev) => [...prev, ...currentFailedEmails]);
+            setProgressById((prev) => ({
+              ...prev,
+              failedCount: failedCount,
+              status: `Batch ${batchNumber}: Tất cả email không hợp lệ, đã bỏ qua`,
+            }));
+            continue; // Bỏ qua batch này
+          }
+
+          // Tạo payload đầy đủ với id, nguoi_nhan, shdon, khieu, scret - chỉ với email hợp lệ
+          const emailPayload = validBatch.map((item) => {
+            // Tính secret từ email
+            const scret = calculateSecret(item.email);
+
+            // Sửa lại phần tạo payload (thay thế từ dòng 1210 đến 1214)
+            // Đảm bảo shdon là số nguyên, không phải scientific notation
+            let shdonValue = 0;
+            if (
+              item.shdon !== null &&
+              item.shdon !== undefined &&
+              item.shdon !== ""
+            ) {
+              if (typeof item.shdon === "number") {
+                // Kiểm tra xem có phải scientific notation không
+                const shdonStr = item.shdon.toString();
+                if (shdonStr.includes("e") || shdonStr.includes("E")) {
+                  // Nếu là scientific notation, lấy phần nguyên
+                  shdonValue = Math.floor(item.shdon);
+                } else {
+                  // Nếu là số bình thường, lấy phần nguyên
+                  shdonValue = Math.floor(item.shdon);
+                }
+              } else {
+                // Nếu là string, xử lý
+                const shdonStr = String(item.shdon).trim();
+                // Kiểm tra xem có phải scientific notation không
+                if (shdonStr.includes("e") || shdonStr.includes("E")) {
+                  // Parse scientific notation về số rồi lấy phần nguyên
+                  const numValue = parseFloat(shdonStr);
+                  if (!isNaN(numValue)) {
+                    shdonValue = Math.floor(numValue);
+                  }
+                } else {
+                  // Nếu không phải scientific notation, loại bỏ ký tự không phải số
+                  const shdonClean = shdonStr.replace(/[^\d]/g, "");
+                  if (shdonClean) {
+                    shdonValue = parseInt(shdonClean, 10) || 0;
+                  }
+                }
+              }
+            }
+
+            const payloadItem = {
+              id: String(item.id),
+              nguoi_nhan: String(item.email.trim()),
+              shdon: shdonValue, // Sử dụng giá trị đã xử lý
+              khieu: String(item.khieu || DEFAULT_KHIEU),
+              scret: String(scret),
+            };
+
+            return payloadItem;
+          });
+
+          const payload = {
+            id: emailPayload,
+            type: String(type.trim()),
+          };
+
+          console.log(
+            `Batch ${batchNumber}: Gửi ${validBatch.length} email hợp lệ (${
+              batch.length - validBatch.length
+            } bị loại bỏ do email không hợp lệ)`
+          );
+          console.log(`Payload:`, JSON.stringify(payload, null, 2));
+
+          const apiUrl = `${selectedApiConfig.baseUrl}/api/Invoice68/EmailMulti`;
+          const response = await fetch(apiUrl, {
+            method: "POST",
+            headers: {
+              Authorization:
+                "Bear O87316arj5+Od3Fqyy5hzdBfIuPk73eKqpAzBSvv8sY=",
+              Referer: `${selectedApiConfig.baseUrl}/`,
+              "User-Agent":
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(payload),
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            let errorMessage = `HTTP error! status: ${response.status}`;
+            try {
+              const errorJson = JSON.parse(errorText);
+              errorMessage = errorJson.message || errorMessage;
+            } catch {
+              errorMessage = errorText || errorMessage;
+            }
+            throw new Error(errorMessage);
+          }
+
+          const result = await response.json();
+          console.log(`Batch ${batchNumber} Result:`, result);
+
+          if (result.code === "00") {
+            // Kiểm tra xem có email thất bại trong result.data không
+            let failedEmailsFromResponse = [];
+            let successCountInBatch = validBatch.length;
+
+            if (result.data && Array.isArray(result.data)) {
+              // Duyệt qua từng item trong result.data để tìm các email thất bại (code: "99")
+              result.data.forEach((responseItem) => {
+                if (responseItem.code === "99" && responseItem.message) {
+                  // Trích xuất email từ message
+                  // Format: "Địa chỉ email 'email@example.com' không thể nhận được email"
+                  // hoặc "Địa chỉ email người nhận 'email@example.com' không đúng định dạng."
+                  const emailMatch =
+                    responseItem.message.match(/'([^']+@[^']+)'/);
+                  if (emailMatch && emailMatch[1]) {
+                    const failedEmail = emailMatch[1].toLowerCase();
+                    failedEmailsFromResponse.push({
+                      email: failedEmail,
+                      error: responseItem.message,
+                    });
+
+                    // Tìm item tương ứng trong validBatch
+                    const correspondingItem = validBatch.find(
+                      (item) => item.email.toLowerCase() === failedEmail
+                    );
+
+                    if (correspondingItem) {
+                      // Thêm vào danh sách lỗi
+                      const failedEmailRecord = {
+                        email: correspondingItem.email,
+                        error: responseItem.message,
+                        hoadon68_id: correspondingItem.id,
+                        batchNumber: batchNumber,
+                      };
+                      currentFailedEmails.push(failedEmailRecord);
+                      allFailedIds.add(correspondingItem.id);
+                      allFailedEmails.add(failedEmail);
+
+                      // Giảm số lượng thành công
+                      successCountInBatch--;
+                    }
+                  }
+                }
+              });
+            }
+
+            // Cập nhật số lượng thành công và thất bại
+            successCount += successCountInBatch;
+            failedCount +=
+              batch.length -
+              validBatch.length +
+              failedEmailsFromResponse.length;
+
+            // Cập nhật danh sách email lỗi nếu có
+            if (currentFailedEmails.length > 0) {
+              setFailedEmailsById((prev) => [...prev, ...currentFailedEmails]);
+            }
+
+            const detailMessage =
+              failedEmailsFromResponse.length > 0
+                ? `Đã gửi email batch ${batchNumber}: ${successCountInBatch} thành công, ${
+                    failedEmailsFromResponse.length
+                  } thất bại (${
+                    batch.length - validBatch.length
+                  } bị loại bỏ do email không hợp lệ)`
+                : `Đã gửi email batch ${batchNumber}: ${
+                    validBatch.length
+                  } hóa đơn (${
+                    batch.length - validBatch.length
+                  } bị loại bỏ do email không hợp lệ)`;
+
+            toast.current.show({
+              severity:
+                failedEmailsFromResponse.length > 0 ? "warn" : "success",
+              summary:
+                failedEmailsFromResponse.length > 0
+                  ? "Thành công (có cảnh báo)"
+                  : "Thành công",
+              detail: detailMessage,
+              life: 3000,
+            });
+          } else {
+            // Xử lý lỗi - lưu tất cả record trong validBatch vào danh sách lỗi
+            const errorMessage = result.message || "Gửi email thất bại";
+
+            validBatch.forEach((item) => {
+              const failedEmail = {
+                email: item.email,
+                error: errorMessage,
+                hoadon68_id: item.id,
+                batchNumber: batchNumber,
+              };
+              currentFailedEmails.push(failedEmail);
+              allFailedIds.add(item.id);
+              allFailedEmails.add(item.email.toLowerCase());
+            });
+
+            failedCount += validBatch.length;
+
+            // Cập nhật danh sách email lỗi
+            setFailedEmailsById((prev) => [...prev, ...currentFailedEmails]);
+
+            toast.current.show({
+              severity: "error",
+              summary: "Lỗi gửi email",
+              detail: `Lỗi batch ${batchNumber}: ${errorMessage}`,
+              life: 5000,
+            });
+          }
+
+          // Cập nhật tiến độ với số lượng hợp lệ
+          const currentSent = processedCount;
+          const totalToProcess = hoadon68IdList.length;
+          const percentage = Math.round((currentSent / totalToProcess) * 100);
+          setProgressById((prev) => ({
+            ...prev,
+            currentSent: currentSent,
+            percentage: percentage,
+            successCount: successCount,
+            failedCount: failedCount,
+            status: `Đã gửi batch ${batchNumber}: ${validBatch.length} hóa đơn`,
+          }));
+
+          // Đợi 2 giây trước khi gửi batch tiếp theo (trừ batch cuối)
+          if (remainingIds.length > 0) {
+            setProgressById((prev) => ({
+              ...prev,
+              status: `Đang đợi 2 giây trước batch ${batchNumber + 1}...`,
+            }));
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+          }
+        } catch (error) {
+          console.error(`Error sending batch ${batchNumber}:`, error);
+
+          // Lưu tất cả ID trong batch này là lỗi
+          const errorMessage = error.message || "Lỗi không xác định";
+          batch.forEach((item) => {
+            const failedEmail = {
+              email: item.email || "N/A (Lỗi batch)",
+              error: errorMessage,
+              hoadon68_id: item.id,
+              batchNumber: batchNumber,
+            };
+            currentFailedEmails.push(failedEmail);
+            allFailedIds.add(item.id);
+            if (item.email) {
+              allFailedEmails.add(item.email.toLowerCase());
+            }
+          });
+
+          failedCount += batch.length;
+
+          // Cập nhật danh sách email lỗi
+          setFailedEmailsById((prev) => [...prev, ...currentFailedEmails]);
+
+          setProgressById((prev) => ({
+            ...prev,
+            failedCount: failedCount,
+          }));
+          toast.current.show({
+            severity: "error",
+            summary: "Lỗi gửi email",
+            detail: `Lỗi khi gửi email batch ${batchNumber}: ${error.message}`,
+            life: 5000,
+          });
+          // Tiếp tục với batch tiếp theo dù có lỗi
+        }
+      }
+
+      // Hoàn thành
+      setProgressById((prev) => ({
+        ...prev,
+        isCompleted: true,
+        status: "Hoàn thành!",
+      }));
+
+      toast.current.show({
+        severity: successCount > 0 ? "success" : "warn",
+        summary: "Hoàn thành",
+        detail: `Tổng kết: Thành công ${successCount} email, Thất bại ${failedCount} email`,
+        life: 5000,
+      });
+    } catch (error) {
+      console.error("Error sending emails:", error);
+      setProgressById((prev) => ({
+        ...prev,
+        status: `Lỗi: ${error.message || "Có lỗi xảy ra"}`,
+      }));
+      toast.current.show({
+        severity: "error",
+        summary: "Lỗi",
+        detail: error.message || "Có lỗi xảy ra khi gửi email",
+        life: 3000,
+      });
+    } finally {
+      setSendingById(false);
+      setLoading(false);
+    }
+  };
+
+  // Sửa lại hàm handleDownloadTemplateById (thay thế từ dòng 1195)
+  const handleDownloadTemplateById = () => {
+    try {
+      const sampleData = [
+        {
+          Hoadon68_ID: "41b1df2f-7d4f-4ec0-9fbd-fc8fde4cc233",
+          Email: "example1@email.com",
+          "Số Hóa Đơn": 171486,
+          "Ký Hiệu": "EBL01-25T",
+        },
+        {
+          Hoadon68_ID: "abc123-def456-ghi789",
+          Email: "example2@email.com",
+          "Số Hóa Đơn": 171481,
+          "Ký Hiệu": "EBL01-25T",
+        },
+        {
+          Hoadon68_ID: "xyz789-uvw456-rst123",
+          Email: "example3@email.com",
+          "Số Hóa Đơn": 171462,
+          "Ký Hiệu": "EBL01-25T",
+        },
+      ];
+
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(sampleData);
+
+      ws["!cols"] = [
+        { wch: 40 }, // Hoadon68_ID
+        { wch: 30 }, // Email
+        { wch: 15 }, // Số Hóa Đơn
+        { wch: 15 }, // Ký Hiệu
+      ];
+
+      XLSX.utils.book_append_sheet(wb, ws, "Mẫu");
+
+      const fileName = `Mau_File_Hoadon68_ID_${new Date().getTime()}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+
+      toast.current.show({
+        severity: "success",
+        summary: "Thành công",
+        detail: "Đã tải file mẫu thành công",
+        life: 3000,
+      });
+    } catch (error) {
+      console.error("Error downloading template:", error);
+      toast.current.show({
+        severity: "error",
+        summary: "Lỗi",
+        detail: "Có lỗi xảy ra khi tải file mẫu",
+        life: 3000,
+      });
+    }
+  };
+
+  // Hàm xử lý upload file JSON với hỗ trợ file lớn
+  const handleImportJson = (event) => {
+    const file = event.files[0];
+    if (!file) {
+      return;
+    }
+
+    // Hiển thị thông báo file lớn
+    const fileSizeMB = (file.size / (1024 * 1024)).toFixed(2);
+    if (file.size > 50 * 1024 * 1024) {
+      toast.current.show({
+        severity: "info",
+        summary: "Thông báo",
+        detail: `File lớn (${fileSizeMB}MB). Đang xử lý, vui lòng đợi...`,
+        life: 5000,
+      });
+    }
+
+    setProcessingJson(true);
+    setJsonProgress({
+      status: "Đang đọc file...",
+      processed: 0,
+      total: 0,
+      percentage: 0,
+    });
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        setJsonProgress({
+          status: "Đang parse JSON...",
+          processed: 0,
+          total: 0,
+          percentage: 10,
+        });
+
+        const jsonText = e.target.result;
+        let jsonData;
+
+        // Parse JSON - có thể là array hoặc object
+        try {
+          jsonData = JSON.parse(jsonText);
+        } catch (parseError) {
+          setProcessingJson(false);
+          toast.current.show({
+            severity: "error",
+            summary: "Lỗi",
+            detail: "File JSON không hợp lệ. Vui lòng kiểm tra lại.",
+            life: 5000,
+          });
+          return;
+        }
+
+        // Chuyển đổi thành array nếu là object đơn
+        const dataArray = Array.isArray(jsonData) ? jsonData : [jsonData];
+        const totalOrders = dataArray.length;
+
+        setJsonProgress({
+          status: `Đang xử lý ${totalOrders} orders...`,
+          processed: 0,
+          total: totalOrders,
+          percentage: 20,
+        });
+
+        // Extract items từ mỗi order - xử lý theo batch để không block UI
+        const extractedItems = [];
+        const BATCH_SIZE = 100; // Xử lý 100 orders mỗi batch
+
+        const processBatch = async (startIndex) => {
+          const endIndex = Math.min(startIndex + BATCH_SIZE, totalOrders);
+
+          for (let i = startIndex; i < endIndex; i++) {
+            const order = dataArray[i];
+
+            // Lấy order_number từ order
+            const orderNumber = order.order_number || order.order_id || "";
+
+            // Ưu tiên lấy từ raw_data.line_items (dữ liệu gốc từ TikTok)
+            if (
+              order &&
+              order.raw_data &&
+              order.raw_data.line_items &&
+              Array.isArray(order.raw_data.line_items)
+            ) {
+              order.raw_data.line_items.forEach((lineItem) => {
+                extractedItems.push({
+                  order_number: String(orderNumber),
+                  item_id: String(lineItem.id || ""),
+                  item_sku: lineItem.seller_sku || "",
+                  item_name: lineItem.product_name || "",
+                });
+              });
+            }
+            // Fallback: lấy từ items array nếu không có raw_data.line_items
+            else if (order && order.items && Array.isArray(order.items)) {
+              order.items.forEach((item) => {
+                extractedItems.push({
+                  order_number: String(orderNumber),
+                  item_id: String(item.item_id || ""),
+                  item_sku: item.item_sku || "",
+                  item_name: item.item_name || "",
+                });
+              });
+            }
+
+            // Cập nhật progress
+            const processed = i + 1;
+            const percentage = 20 + Math.floor((processed / totalOrders) * 70);
+            setJsonProgress({
+              status: `Đang xử lý order ${processed}/${totalOrders}...`,
+              processed: processed,
+              total: totalOrders,
+              percentage: percentage,
+            });
+          }
+
+          // Nếu còn orders, tiếp tục xử lý batch tiếp theo
+          if (endIndex < totalOrders) {
+            // Sử dụng setTimeout để cho phép browser render và không block UI
+            await new Promise((resolve) => setTimeout(resolve, 0));
+            await processBatch(endIndex);
+          }
+        };
+
+        // Bắt đầu xử lý từ index 0
+        await processBatch(0);
+
+        setJsonProgress({
+          status: "Hoàn thành!",
+          processed: totalOrders,
+          total: totalOrders,
+          percentage: 100,
+        });
+
+        if (extractedItems.length === 0) {
+          setProcessingJson(false);
+          toast.current.show({
+            severity: "warn",
+            summary: "Cảnh báo",
+            detail:
+              "Không tìm thấy items nào trong file JSON. Vui lòng kiểm tra cấu trúc dữ liệu.",
+            life: 5000,
+          });
+          return;
+        }
+
+        setJsonItemsData(extractedItems);
+        setProcessingJson(false);
+        toast.current.show({
+          severity: "success",
+          summary: "Thành công",
+          detail: `Đã import ${extractedItems.length} items từ ${totalOrders} order(s)`,
+          life: 5000,
+        });
+      } catch (error) {
+        console.error("Error parsing JSON:", error);
+        setProcessingJson(false);
+        toast.current.show({
+          severity: "error",
+          summary: "Lỗi",
+          detail: `Có lỗi xảy ra khi đọc file JSON: ${error.message}`,
+          life: 5000,
+        });
+      }
+    };
+
+    reader.onerror = () => {
+      setProcessingJson(false);
+      toast.current.show({
+        severity: "error",
+        summary: "Lỗi",
+        detail: "Có lỗi xảy ra khi đọc file",
+        life: 5000,
+      });
+    };
+
+    reader.readAsText(file);
+  };
+
+  // Hàm export Excel từ JSON items
+  const handleExportJsonToExcel = () => {
+    if (!jsonItemsData || jsonItemsData.length === 0) {
+      toast.current.show({
+        severity: "warn",
+        summary: "Cảnh báo",
+        detail:
+          "Không có dữ liệu để xuất Excel. Vui lòng import file JSON trước.",
+        life: 3000,
+      });
+      return;
+    }
+
+    try {
+      // Tạo workbook và worksheet
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(jsonItemsData);
+
+      // Đặt độ rộng cột
+      ws["!cols"] = [
+        { wch: 20 }, // order_number
+        { wch: 20 }, // item_id
+        { wch: 15 }, // item_sku
+        { wch: 50 }, // item_name
+      ];
+
+      XLSX.utils.book_append_sheet(wb, ws, "Items");
+
+      // Tạo tên file với timestamp
+      const fileName = `Items_Export_${
+        new Date().toISOString().split("T")[0]
+      }.xlsx`;
+      XLSX.writeFile(wb, fileName);
+
+      toast.current.show({
+        severity: "success",
+        summary: "Thành công",
+        detail: `Đã xuất ${jsonItemsData.length} items ra file Excel`,
+        life: 3000,
+      });
+    } catch (error) {
+      console.error("Error exporting to Excel:", error);
+      toast.current.show({
+        severity: "error",
+        summary: "Lỗi",
+        detail: "Có lỗi xảy ra khi xuất file Excel",
+        life: 3000,
+      });
+    }
   };
 
   const handleSendEmailMulti = async () => {
@@ -1380,6 +2412,421 @@ export default function DeleteCache() {
                 (!id.trim() || !nguoiNhan.trim() || !shdon))
             }
           /> */}
+        </div>
+      </Card>
+
+      <Card title="Gửi Email theo Hoadon68_ID (Import Excel)" className="mb-4">
+        <div className="flex flex-column gap-4">
+          <div className="field">
+            <label htmlFor="apiConfigById" className="font-bold">
+              Chọn Link API <span className="text-red-500">*</span>
+            </label>
+            <Dropdown
+              id="apiConfigById"
+              value={selectedApiConfig}
+              options={API_CONFIGS}
+              onChange={(e) => setSelectedApiConfig(e.value)}
+              optionLabel="label"
+              placeholder="Chọn link API"
+              className="w-full"
+            />
+          </div>
+
+          <div className="field">
+            <label htmlFor="typeById" className="font-bold">
+              Type <span className="text-red-500">*</span>
+            </label>
+            <InputText
+              id="typeById"
+              value={type}
+              onChange={(e) => setType(e.target.value)}
+              placeholder="Nhập Type"
+              className="w-full"
+            />
+            <small className="text-600">
+              <i className="pi pi-info-circle mr-1"></i>
+              Mặc định: "Gửi hóa đơn"
+            </small>
+          </div>
+
+          <div className="field">
+            <div className="flex justify-content-between align-items-center mb-2">
+              <label className="font-bold m-0">
+                Import File Excel (Chỉ Hoadon68_ID)
+              </label>
+              <Button
+                label="Tải File Mẫu"
+                icon="pi pi-download"
+                onClick={handleDownloadTemplateById}
+                className="p-button-outlined p-button-secondary"
+                size="small"
+              />
+            </div>
+            <FileUpload
+              ref={fileUploadByIdRef}
+              name="excelFileById"
+              accept=".xlsx,.xls"
+              maxFileSize={10000000}
+              customUpload
+              uploadHandler={handleImportExcelByIdOnly}
+              auto
+              chooseLabel="Chọn File Excel"
+              className="w-full"
+            />
+            <small className="text-600">
+              <i className="pi pi-info-circle mr-1"></i>
+              Format file Excel: Cột 1 = Hoadon68_ID (bắt buộc), Cột 2 = Email
+              (bắt buộc), Cột 3 = Số Hóa Đơn (bắt buộc), Cột 4 = Ký Hiệu (mặc
+              định: {DEFAULT_KHIEU || "EBL01-25T"})
+              <br />
+              Secret sẽ được tự động tính từ email
+              <br />
+              Gửi theo batch: 50 ID mỗi lần, đợi 2 giây giữa các batch
+            </small>
+          </div>
+
+          {/* Hiển thị tiến độ */}
+          {(sendingById || loading) && progressById.totalCount > 0 ? (
+            <Panel header="Tiến độ xử lý" className="mb-3">
+              <div className="flex flex-column gap-3">
+                <div>
+                  <div className="flex justify-content-between align-items-center mb-2">
+                    <span className="font-bold">{progressById.status}</span>
+                    <span className="text-600">{progressById.percentage}%</span>
+                  </div>
+                  <ProgressBar value={progressById.percentage} />
+                </div>
+
+                <div className="grid">
+                  <div className="col-12 md:col-6">
+                    <div className="flex flex-column">
+                      <span className="text-600 text-sm mb-1">
+                        Batch hiện tại
+                      </span>
+                      <span className="font-bold text-lg">
+                        {progressById.currentBatch} /{" "}
+                        {progressById.totalBatches}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="col-12 md:col-6">
+                    <div className="flex flex-column">
+                      <span className="text-600 text-sm mb-1">Đã gửi</span>
+                      <span className="font-bold text-lg">
+                        {progressById.currentSent} / {progressById.totalCount}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Hiển thị tổng kết khi hoàn thành */}
+                {progressById.isCompleted && (
+                  <div className="p-3 border-1 border-200 border-round bg-green-50">
+                    <div className="flex flex-column gap-2">
+                      <div className="flex align-items-center gap-2">
+                        <i className="pi pi-check-circle text-green-600"></i>
+                        <span className="font-bold text-lg">
+                          Tổng kết kết quả:
+                        </span>
+                      </div>
+                      <div className="grid">
+                        <div className="col-12 md:col-6">
+                          <div className="flex flex-column">
+                            <span className="text-600 text-sm mb-1">
+                              Thành công
+                            </span>
+                            <span className="font-bold text-xl text-green-600">
+                              {progressById.successCount} email
+                            </span>
+                          </div>
+                        </div>
+                        <div className="col-12 md:col-6">
+                          <div className="flex flex-column">
+                            <span className="text-600 text-sm mb-1">
+                              Thất bại
+                            </span>
+                            <span className="font-bold text-xl text-red-600">
+                              {progressById.failedCount} email
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </Panel>
+          ) : null}
+
+          {hoadon68IdList.length > 0 && (
+            <div className="field">
+              <label className="font-bold">
+                Danh sách đã import ({hoadon68IdList.length} hoadon68_id)
+              </label>
+              <DataTable
+                value={hoadon68IdList}
+                paginator
+                rows={10}
+                rowsPerPageOptions={[5, 10, 20, 50]}
+                className="p-datatable-sm"
+              >
+                <Column field="index" header="STT" style={{ width: "5rem" }} />
+                <Column field="id" header="Hoadon68_ID" />
+              </DataTable>
+            </div>
+          )}
+
+          <Button
+            label={
+              hoadon68IdList.length > 0
+                ? `Gửi Email (${hoadon68IdList.length} hóa đơn - 50/batch)`
+                : "Gửi Email"
+            }
+            icon="pi pi-send"
+            onClick={handleSendEmailByIdOnly}
+            loading={sendingById || loading}
+            className="p-button-primary"
+            disabled={!type.trim() || hoadon68IdList.length === 0}
+          />
+        </div>
+      </Card>
+
+      {/* Hiển thị danh sách email lỗi */}
+      {failedEmailsById.length > 0 && (
+        <Panel
+          header={
+            <div className="flex justify-content-between align-items-center w-full">
+              <span>Danh sách Email Lỗi ({failedEmailsById.length} email)</span>
+              <Button
+                label="Xóa Danh Sách"
+                icon="pi pi-trash"
+                onClick={() => setFailedEmailsById([])}
+                className="p-button-danger p-button-sm"
+                size="small"
+              />
+            </div>
+          }
+          className="mb-3"
+        >
+          <div className="flex flex-column gap-2">
+            <div className="p-2 border-1 border-200 border-round bg-red-50">
+              <small className="text-600">
+                <i className="pi pi-exclamation-triangle mr-1"></i>
+                Các email này đã gửi lỗi ở các batch trước và đã được loại trừ
+                khỏi batch tiếp theo
+              </small>
+            </div>
+            <DataTable
+              value={failedEmailsById}
+              paginator
+              rows={10}
+              rowsPerPageOptions={[5, 10, 20, 50]}
+              className="p-datatable-sm"
+            >
+              <Column
+                field="batchNumber"
+                header="Batch"
+                style={{ width: "5rem" }}
+              />
+              <Column field="hoadon68_id" header="Hoadon68_ID" />
+              <Column field="email" header="Email" />
+              <Column
+                field="error"
+                header="Lỗi"
+                body={(rowData) => (
+                  <span className="text-red-600">{rowData.error}</span>
+                )}
+              />
+            </DataTable>
+          </div>
+        </Panel>
+      )}
+
+      {/* Hiển thị danh sách đã import (10 item đầu) */}
+      {hoadon68IdList.length > 0 && (
+        <Panel
+          header={`Danh sách đã import (${hoadon68IdList.length} bản ghi) - Xem 10 item đầu`}
+          className="mb-3"
+        >
+          <div className="flex flex-column gap-2">
+            <DataTable
+              value={hoadon68IdList.slice(0, 10)}
+              className="p-datatable-sm"
+              stripedRows
+            >
+              <Column field="index" header="STT" style={{ width: "5rem" }} />
+              <Column
+                field="id"
+                header="Hoadon68_ID"
+                style={{ minWidth: "250px" }}
+              />
+              <Column
+                field="email"
+                header="Email"
+                style={{ minWidth: "200px" }}
+                body={(rowData) => (
+                  <span
+                    className={
+                      !isValidEmail(rowData.email) ? "text-red-600" : ""
+                    }
+                  >
+                    {rowData.email || "N/A"}
+                    {!isValidEmail(rowData.email) && (
+                      <i
+                        className="pi pi-exclamation-triangle ml-2 text-red-600"
+                        title="Email không hợp lệ"
+                      ></i>
+                    )}
+                  </span>
+                )}
+              />
+              <Column
+                field="shdon"
+                header="Số Hóa Đơn"
+                style={{ width: "120px" }}
+                body={(rowData) => (
+                  <span className={rowData.shdon === 0 ? "text-red-600" : ""}>
+                    {rowData.shdon || 0}
+                    {rowData.shdon === 0 && (
+                      <i
+                        className="pi pi-exclamation-triangle ml-2 text-red-600"
+                        title="Số hóa đơn = 0"
+                      ></i>
+                    )}
+                  </span>
+                )}
+              />
+              <Column
+                field="khieu"
+                header="Ký Hiệu"
+                style={{ width: "120px" }}
+              />
+            </DataTable>
+            {hoadon68IdList.length > 10 && (
+              <div className="p-2 border-1 border-200 border-round bg-blue-50">
+                <small className="text-600">
+                  <i className="pi pi-info-circle mr-1"></i>
+                  Chỉ hiển thị 10 item đầu tiên. Tổng cộng{" "}
+                  {hoadon68IdList.length} bản ghi.
+                  <br />
+                  Mở Console (F12) để xem chi tiết 10 item đầu.
+                </small>
+              </div>
+            )}
+            <div className="p-2 border-1 border-200 border-round bg-yellow-50">
+              <small className="text-600">
+                <i className="pi pi-info-circle mr-1"></i>
+                <strong>Thống kê:</strong> Email hợp lệ:{" "}
+                {
+                  hoadon68IdList.filter(
+                    (item) => item.email && isValidEmail(item.email)
+                  ).length
+                }{" "}
+                / {hoadon68IdList.length} | Số Hóa Đơn &gt; 0:{" "}
+                {hoadon68IdList.filter((item) => item.shdon > 0).length} /{" "}
+                {hoadon68IdList.length}
+              </small>
+            </div>
+          </div>
+        </Panel>
+      )}
+
+      {/* Card mới: Export JSON to Excel */}
+      <Card title="Xuất Excel từ JSON" className="mb-4">
+        <div className="flex flex-column gap-4">
+          <div className="field">
+            <label className="font-bold m-0">
+              Import File JSON <span className="text-red-500">*</span>
+            </label>
+            <FileUpload
+              ref={fileUploadJsonRef}
+              name="jsonFile"
+              accept=".json"
+              maxFileSize={500000000}
+              customUpload
+              uploadHandler={handleImportJson}
+              auto
+              chooseLabel="Chọn File JSON"
+              className="w-full"
+              disabled={processingJson}
+            />
+            <small className="text-600">
+              <i className="pi pi-info-circle mr-1"></i>
+              File JSON có thể là array hoặc object đơn. Hệ thống sẽ tự động
+              extract items từ mỗi order. Hỗ trợ file lớn (tối đa 500MB).
+              <br />
+              Cấu trúc: mỗi order có mảng "items" chứa item_id, item_sku,
+              item_name
+            </small>
+          </div>
+
+          {/* Progress bar khi đang xử lý file lớn */}
+          {processingJson && (
+            <Panel header="Đang xử lý file JSON" className="mb-3">
+              <div className="flex flex-column gap-3">
+                <div>
+                  <div className="flex justify-content-between align-items-center mb-2">
+                    <span className="font-bold">{jsonProgress.status}</span>
+                    <span className="text-600">{jsonProgress.percentage}%</span>
+                  </div>
+                  <ProgressBar value={jsonProgress.percentage} />
+                </div>
+                {jsonProgress.total > 0 && (
+                  <div className="p-2 border-1 border-200 border-round bg-blue-50">
+                    <small className="text-600">
+                      <i className="pi pi-info-circle mr-1"></i>
+                      Đã xử lý: {jsonProgress.processed} / {jsonProgress.total}{" "}
+                      orders
+                    </small>
+                  </div>
+                )}
+              </div>
+            </Panel>
+          )}
+
+          {jsonItemsData.length > 0 && (
+            <div className="field">
+              <div className="flex justify-content-between align-items-center mb-2">
+                <label className="font-bold m-0">
+                  Dữ liệu đã import ({jsonItemsData.length} items)
+                </label>
+                <Button
+                  label="Xuất Excel"
+                  icon="pi pi-file-excel"
+                  onClick={handleExportJsonToExcel}
+                  className="p-button-success"
+                />
+              </div>
+              <DataTable
+                value={jsonItemsData}
+                paginator={jsonItemsData.length > 10}
+                rows={10}
+                rowsPerPageOptions={[5, 10, 20, 50]}
+                className="p-datatable-sm"
+              >
+                <Column
+                  field="order_number"
+                  header="Số Đơn Hàng"
+                  style={{ width: "180px" }}
+                />
+                <Column
+                  field="item_id"
+                  header="Mã Hàng"
+                  style={{ width: "200px" }}
+                />
+                <Column
+                  field="item_sku"
+                  header="Mã SKU"
+                  style={{ width: "150px" }}
+                />
+                <Column
+                  field="item_name"
+                  header="Tên Sản Phẩm"
+                  style={{ minWidth: "300px" }}
+                />
+              </DataTable>
+            </div>
+          )}
         </div>
       </Card>
     </div>

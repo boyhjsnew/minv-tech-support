@@ -1,27 +1,32 @@
 import * as XLSX from "xlsx";
-import uploadExcelFile from "./UploadExcel.js";
+import uploadProductExcel from "./UploadProductExcel.js";
 
 let excelData = []; // Biến lưu trữ dữ liệu đã mapping
 let currentTaxCode = null; // Lưu taxCode hiện tại
 
-const mapCustomerDataAsync = async (customerArray) => {
-  excelData = customerArray.map((data) => ({
-    "Mã khách hàng *": data.ma_dt,
-    "Tên đơn vị": data.ten_dt,
-    "Mã số thuế": data.ms_thue || "",
-    "Người mua hàng": data.dai_dien || "",
-    "Địa chỉ *": data.dia_chi || ".",
-    "Điện thoại": data.dien_thoai || null,
-    Email: data.email,
-    "Số tài khoản": null,
-    "Tên ngân hàng": null,
-  }));
+/**
+ * Map dữ liệu hàng hóa từ API sang format Excel
+ * @param {Array} productArray - Mảng dữ liệu hàng hóa từ API
+ * @returns {Array} - Mảng dữ liệu đã được mapping
+ */
+const mapProductDataAsync = async (productArray) => {
+  excelData = productArray.map((data) => {
+    // Mapping các trường từ API response sang format Excel
+    // Dựa trên cấu trúc thực tế: ma_hv, ten_hv, ma_dvt, gia_ban, pt_thue/ma_thue
+    return {
+      "Mã hàng hóa *": data.ma_hv || "",
+      "Tên hàng hóa *": data.ten_hv || "",
+      "Đơn vị tính": data.ma_dvt || "",
+      "Đơn giá": data.gia_ban !== null && data.gia_ban !== undefined ? data.gia_ban : 0,
+      "Thuế suất thuế GTGT": data.pt_thue !== null && data.pt_thue !== undefined ? data.pt_thue : (data.ma_thue || 0),
+    };
+  });
 
   return excelData; // Trả về dữ liệu đã mapping
 };
 
 /**
- * Upload file Excel khách hàng lên 2.0 (không tải về máy)
+ * Upload file Excel lên 2.0 (không tải về máy)
  * Browser sẽ tự động gửi cookies theo domain (vì đã đăng nhập)
  * @param {string} taxCode - Mã số thuế
  * @param {Function} onUploadComplete - Callback khi upload xong
@@ -29,7 +34,7 @@ const mapCustomerDataAsync = async (customerArray) => {
 const uploadExcelToServer = async (taxCode = null, onUploadComplete = null) => {
   if (excelData.length === 0) {
     if (onUploadComplete) {
-      onUploadComplete({ success: false, message: "Chưa có dữ liệu khách hàng!" });
+      onUploadComplete({ success: false, message: "Chưa có dữ liệu hàng hóa!" });
     }
     return;
   }
@@ -48,17 +53,17 @@ const uploadExcelToServer = async (taxCode = null, onUploadComplete = null) => {
     const ws = XLSX.utils.json_to_sheet(excelData);
 
     // Thêm sheet vào workbook
-    XLSX.utils.book_append_sheet(wb, ws, "KhachHang");
+    XLSX.utils.book_append_sheet(wb, ws, "HangHoa");
 
     // Tạo file Excel trong memory (không download)
-    const fileName = "DanhSachKhachHang.xlsx";
+    const fileName = "DanhSachHangHoa.xlsx";
     const excelBuffer = XLSX.write(wb, { type: "array", bookType: "xlsx" });
     const file = new File([excelBuffer], fileName, {
       type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     });
 
-    console.log("📤 Đang upload file Excel khách hàng lên 2.0...");
-    const uploadResult = await uploadExcelFile(file, taxCodeToUse);
+    console.log("📤 Đang upload file Excel hàng hóa lên 2.0...");
+    const uploadResult = await uploadProductExcel(file, taxCodeToUse);
 
     if (uploadResult.success) {
       console.log("✅ Upload thành công:", uploadResult.data);
@@ -80,11 +85,11 @@ const uploadExcelToServer = async (taxCode = null, onUploadComplete = null) => {
 };
 
 /**
- * Hàm xuất file Excel cho khách hàng (chỉ tải về máy, không upload)
+ * Hàm xuất file Excel cho hàng hóa (chỉ tải về máy, không upload)
  */
 const exportToExcel = () => {
   if (excelData.length === 0) {
-    alert("Chưa có dữ liệu kìa !");
+    alert("Chưa có dữ liệu hàng hóa!");
     return;
   }
 
@@ -93,10 +98,10 @@ const exportToExcel = () => {
   const ws = XLSX.utils.json_to_sheet(excelData);
 
   // Thêm sheet vào workbook
-  XLSX.utils.book_append_sheet(wb, ws, "KhachHang");
+  XLSX.utils.book_append_sheet(wb, ws, "HangHoa");
 
   // Xuất file Excel (tải về máy)
-  XLSX.writeFile(wb, "DanhSachKhachHang.xlsx");
+  XLSX.writeFile(wb, "DanhSachHangHoa.xlsx");
 };
 
 /**
@@ -107,4 +112,5 @@ const setUploadConfig = (taxCode) => {
   currentTaxCode = taxCode;
 };
 
-export { mapCustomerDataAsync, exportToExcel, uploadExcelToServer, setUploadConfig };
+export { mapProductDataAsync, exportToExcel, uploadExcelToServer, setUploadConfig };
+

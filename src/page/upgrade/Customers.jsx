@@ -9,7 +9,14 @@ import { Toast } from "primereact/toast";
 import {
   mapCustomerDataAsync,
   exportToExcel,
+  uploadExcelToServer as uploadExcelToServerDMKH,
 } from "../../Utils/MappingDMKH.js";
+import {
+  mapProductDataAsync,
+  exportToExcel as exportToExcelHH,
+  uploadExcelToServer as uploadExcelToServerDMHH,
+  setUploadConfig as setUploadConfigHH,
+} from "../../Utils/MappingDMHH.js";
 import uploadExcelFile from "../../Utils/UploadExcel.js";
 
 import { mapCustomerData, exportToExcelAuto } from "../../Utils/AutoMapping.js";
@@ -21,6 +28,7 @@ export default function Customers() {
   const [customerRaws, setCustomerRaws] = useState([]);
   const [loading, setLoading] = useState(false);
   const [loadingHH, setLoadingHH] = useState(false);
+  const [loadingUploadHH, setLoadingUploadHH] = useState(false);
   const [countError, setCountError] = useState(0);
   const [countSuccess, setCountSuccess] = useState(0);
   const toast = useRef(null);
@@ -48,6 +56,39 @@ export default function Customers() {
         const mappedData = await mapCustomerDataAsync(listDMKH);
         setCustomerRaws(mappedData); // State vẫn chưa cập nhật ngay lập tức!
         setActiveIndex(1);
+        
+        // Tự động upload lên 2.0 (không tải file về máy)
+        console.log("📤 Đang tự động upload Excel lên 2.0...");
+        setLoading(true); // Giữ loading để hiển thị đang upload
+        try {
+          await uploadExcelToServerDMKH(taxCode, (result) => {
+            setLoading(false);
+            if (result.success) {
+              toast.current.show({
+                severity: "success",
+                summary: "Thành công",
+                detail: result.message || "Đã upload Excel thành công!",
+              });
+              setActiveIndex(3);
+            } else {
+              toast.current.show({
+                severity: "error",
+                summary: "Lỗi",
+                detail: result.message || "Upload thất bại!",
+              });
+              setActiveIndex(2);
+            }
+          });
+        } catch (error) {
+          setLoading(false);
+          console.error("❌ Lỗi khi upload:", error);
+          toast.current.show({
+            severity: "error",
+            summary: "Lỗi",
+            detail: error.message || "Có lỗi xảy ra khi upload!",
+          });
+          setActiveIndex(2);
+        }
       } else {
         console.warn("⚠️ Không có dữ liệu khách hàng.");
         setErrorMessage("Không có dữ liệu để tải lên.");
@@ -64,23 +105,58 @@ export default function Customers() {
     setErrorMessage("");
     setLoadingHH(true);
     try {
-      console.log("📌 Đang lấy dữ liệu khách hàng...");
-      const listDMKH = await getDMHH(taxCode);
+      console.log("📌 Đang lấy dữ liệu hàng hóa...");
+      const listDMHH = await getDMHH(taxCode);
 
-      if (listDMKH.length > 0) {
-        console.log("✅ Lấy dữ liệu thành công:", listDMKH);
-        setCustomerRaws(listDMKH); // Cập nhật state nhưng chưa dùng ngay!
+      if (listDMHH && listDMHH.length > 0) {
+        console.log("✅ Lấy dữ liệu hàng hóa thành công:", listDMHH);
+        setCustomerRaws(listDMHH); // Cập nhật state
 
-        const mappedData = await mapCustomerDataAsync(listDMKH);
-        setCustomerRaws(mappedData); // State vẫn chưa cập nhật ngay lập tức!
+        const mappedData = await mapProductDataAsync(listDMHH);
+        setCustomerRaws(mappedData); // Cập nhật với dữ liệu đã mapping
         setActiveIndex(1);
+        
+        // Tự động upload lên 2.0 (không tải file về máy)
+        console.log("📤 Đang tự động upload Excel lên 2.0...");
+        setLoadingUploadHH(true);
+        try {
+          await uploadExcelToServerDMHH(taxCode, (result) => {
+            setLoadingUploadHH(false);
+            if (result.success) {
+              toast.current.show({
+                severity: "success",
+                summary: "Thành công",
+                detail: result.message || "Đã upload Excel thành công!",
+              });
+              setActiveIndex(3);
+            } else {
+              toast.current.show({
+                severity: "error",
+                summary: "Lỗi",
+                detail: result.message || "Upload thất bại!",
+              });
+              setActiveIndex(2);
+            }
+          });
+        } catch (error) {
+          setLoadingUploadHH(false);
+          console.error("❌ Lỗi khi upload:", error);
+          toast.current.show({
+            severity: "error",
+            summary: "Lỗi",
+            detail: error.message || "Có lỗi xảy ra khi upload!",
+          });
+          setActiveIndex(2);
+        }
       } else {
-        console.warn("⚠️ Không có dữ liệu khách hàng.");
-        setErrorMessage("Không có dữ liệu để tải lên.");
+        console.warn("⚠️ Không có dữ liệu hàng hóa.");
+        setErrorMessage("Không có dữ liệu hàng hóa để tải lên.");
       }
     } catch (error) {
-      console.error("❌ Lỗi khi lấy dữ liệu:", error);
-      setErrorMessage("Lỗi khi lấy dữ liệu khách hàng.");
+      console.error("❌ Lỗi khi lấy dữ liệu hàng hóa:", error);
+      setErrorMessage(
+        error.message || "Lỗi khi lấy dữ liệu hàng hóa. Vui lòng kiểm tra lại."
+      );
     } finally {
       setLoadingHH(false);
     }
@@ -268,12 +344,50 @@ export default function Customers() {
               value={activeIndex >= 1 ? "Xong" : ""}
             />
 
-            {/* Xuất & Upload Excel */}
+            {/* Xuất & Upload Excel - Hàng hóa */}
             <div className="flex-1 border-2 border-dotted rounded-lg p-4">
               <InfoRow
                 title="Tải file Excel"
                 iconClass="fa-solid fa-file-excel text-green-600 cursor-pointer"
-                onClick={exportToExcel}
+                onClick={async () => {
+                  if (!taxCode) {
+                    toast.current.show({
+                      severity: "warn",
+                      summary: "Cảnh báo",
+                      detail: "Vui lòng nhập mã số thuế.",
+                    });
+                    return;
+                  }
+                  
+                  setLoadingUploadHH(true);
+                  try {
+                    // Tự động export và upload (browser sẽ tự động gửi cookies theo domain)
+                    await exportToExcelHH(taxCode, (result) => {
+                      setLoadingUploadHH(false);
+                      if (result.success) {
+                        toast.current.show({
+                          severity: "success",
+                          summary: "Thành công",
+                          detail: result.message || "Đã export và upload Excel thành công!",
+                        });
+                        setActiveIndex(3);
+                      } else {
+                        toast.current.show({
+                          severity: "error",
+                          summary: "Lỗi",
+                          detail: result.message || "Upload thất bại!",
+                        });
+                      }
+                    });
+                  } catch (error) {
+                    setLoadingUploadHH(false);
+                    toast.current.show({
+                      severity: "error",
+                      summary: "Lỗi",
+                      detail: error.message || "Có lỗi xảy ra!",
+                    });
+                  }
+                }}
               />
 
               {/* 🆕 Input hidden để chọn file */}
@@ -281,11 +395,11 @@ export default function Customers() {
                 type="file"
                 accept=".xls, .xlsx"
                 className="hidden"
-                id="file-upload"
+                id="file-upload-hh"
                 onChange={handleFileUpload}
               />
               <label
-                htmlFor="file-upload"
+                htmlFor="file-upload-hh"
                 className="text-blue-600 text-[13px] cursor-pointer border-2 bg-gray p-1"
               >
                 Chọn file
