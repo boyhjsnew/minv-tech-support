@@ -90,7 +90,7 @@ const InsertCKS = () => {
         //Bước 3 Login 1.0 lấy token
         const tokenOldApp = await Login(taxCode, newToken);
         if (!tokenOldApp) {
-          throw new Error("Không thể đăng nhập 1.0");
+          throw new Error("Không thể đăng nhập 1.0 nhe !");
         }
         const tokenLogin = tokenOldApp.token;
         //Bước 4 Login 2.0 lấy token
