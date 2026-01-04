@@ -8,6 +8,7 @@ import GetTokenCRM from "../../Utils/GetTokenCRM";
 import { ToastContainer, toast } from "react-toastify";
 import { styleSuccess, styleError } from "../../components/ToastNotifyStyle";
 import ToastNotify from "../../components/ToastNotify";
+import { detectOS, getChromeDevModeCommand, isChrome } from "../../Utils/ChromeDevModeDetector";
 
 const Autoaccount = () => {
   //   const dispatch = useDispatch();
@@ -16,6 +17,8 @@ const Autoaccount = () => {
   const [username, setUsername] = useState(null);
   const [password, setPassword] = useState(null);
   const [madvcs, setMadvcs] = useState("VP");
+  const [os, setOs] = useState("unknown");
+  const [chromeCommand, setChromeCommand] = useState("");
   axios.defaults.withCredentials = true;
 
   const handleTokenCRM = async (username, password, madvcs) => {
@@ -25,6 +28,16 @@ const Autoaccount = () => {
 
   useEffect(() => {
     document.title = "Login CRM";
+    
+    // Detect OS và tạo lệnh Chrome Dev Mode
+    const detectedOS = detectOS();
+    setOs(detectedOS);
+    
+    if (isChrome() && (detectedOS === "macos" || detectedOS === "windows")) {
+      const currentUrl = window.location.href;
+      const command = getChromeDevModeCommand(detectedOS, currentUrl);
+      setChromeCommand(command);
+    }
   }, []);
   useEffect(() => {
     if (token) {
@@ -54,6 +67,16 @@ const Autoaccount = () => {
         {
           style: styleError,
         }
+      );
+    }
+  };
+
+  const copyChromeCommand = () => {
+    if (chromeCommand) {
+      navigator.clipboard.writeText(chromeCommand);
+      toast.success(
+        <ToastNotify status={0} message={"Đã copy lệnh vào clipboard!"} />,
+        { style: styleSuccess }
       );
     }
   };
@@ -186,6 +209,85 @@ const Autoaccount = () => {
               </Link> */}
             </div>
           </form>
+          
+          {/* Hiển thị lệnh Chrome Dev Mode nếu là Chrome trên macOS hoặc Windows */}
+          {isChrome() && (os === "macos" || os === "windows") && chromeCommand && (
+            <div
+              style={{
+                backgroundColor: "#f0f9ff",
+                border: "1px solid #0ea5e9",
+                borderRadius: "8px",
+                padding: "1rem",
+                marginBottom: "1rem",
+                marginTop: "1rem",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  marginBottom: "0.5rem",
+                }}
+              >
+                <label
+                  className="block mb-2 fz-15"
+                  style={{
+                    fontWeight: 600,
+                    color: "#0c4a6e",
+                    margin: 0,
+                  }}
+                >
+                  <i className="fa-brands fa-chrome" style={{ marginRight: "8px" }}></i>
+                  Mở Chrome Dev Mode ({os === "macos" ? "macOS" : "Windows"})
+                </label>
+                <button
+                  onClick={copyChromeCommand}
+                  style={{
+                    backgroundColor: "#0ea5e9",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "4px",
+                    padding: "0.5rem 1rem",
+                    cursor: "pointer",
+                    fontSize: "14px",
+                    fontWeight: 500,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.5rem",
+                  }}
+                >
+                  <i className="fa-regular fa-copy"></i>
+                  Copy
+                </button>
+              </div>
+              <div
+                style={{
+                  backgroundColor: "#1e293b",
+                  color: "#e2e8f0",
+                  padding: "0.75rem",
+                  borderRadius: "4px",
+                  fontFamily: "monospace",
+                  fontSize: "12px",
+                  wordBreak: "break-all",
+                  overflowX: "auto",
+                }}
+              >
+                {chromeCommand}
+              </div>
+              <p
+                style={{
+                  fontSize: "12px",
+                  color: "#64748b",
+                  marginTop: "0.5rem",
+                  marginBottom: 0,
+                }}
+              >
+                Chạy lệnh trên trong Terminal (macOS) hoặc Command Prompt (Windows)
+              </p>
+            </div>
+          )}
+
           <button
             type="submit"
             className="p-button mt-2 fz-15"

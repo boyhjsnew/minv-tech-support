@@ -38,6 +38,39 @@ const NavBar = () => {
     }
   }, [user]);
 
+  // Kiểm tra đăng nhập CRM
+  const isCRMLoggedIn = () => {
+    const storedAccountString = localStorage.getItem("account");
+    if (!storedAccountString) {
+      return false;
+    }
+    try {
+      const storedAccount = JSON.parse(storedAccountString);
+      return (
+        storedAccount &&
+        storedAccount.username &&
+        storedAccount.password &&
+        storedAccount.madvcs
+      );
+    } catch (error) {
+      return false;
+    }
+  };
+
+  // Xử lý click vào link cần đăng nhập
+  const handleProtectedLinkClick = (e, path) => {
+    const routesRequireLogin = ["/xoa-cache-ky", "/update-hoa-don"];
+    if (routesRequireLogin.includes(path) && !isCRMLoggedIn()) {
+      e.preventDefault();
+      alert(
+        "⚠️ Vui lòng đăng nhập CRM trước!\n\n" +
+        "Bạn cần đăng nhập vào CRM để sử dụng tính năng này.\n" +
+        "Vui lòng vào trang 'Đăng nhập CRM' để đăng nhập."
+      );
+      navigate("/tu-dong-dang-nhap");
+    }
+  };
+
   const onMouseLeave = () => {
     if (window.innerWidth < 960) {
       setDropdown(false);
@@ -117,7 +150,11 @@ const NavBar = () => {
             onMouseEnter={() => setOpenDropdown(true)}
             onMouseLeave={() => setOpenDropdown(false)}
           >
-            <Link className="link" to="/xoa-cache-ky">
+            <Link
+              className="link"
+              to="/xoa-cache-ky"
+              onClick={(e) => handleProtectedLinkClick(e, "/xoa-cache-ky")}
+            >
               <span
                 style={{ paddingRight: "5px" }}
                 className="fa-solid fa-table-list"
@@ -133,7 +170,11 @@ const NavBar = () => {
               getLocation.pathname === "/update-hoa-don" ? "active" : ""
             }
           >
-            <Link className="link" to="/update-hoa-don">
+            <Link
+              className="link"
+              to="/update-hoa-don"
+              onClick={(e) => handleProtectedLinkClick(e, "/update-hoa-don")}
+            >
               <span
                 style={{ paddingRight: "5px" }}
                 class="fa-solid fa-calendar-days"

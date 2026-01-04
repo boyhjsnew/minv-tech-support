@@ -1,5 +1,5 @@
 import * as React from "react";
-import { createBrowserRouter, Outlet, RouterProvider } from "react-router-dom";
+import { createBrowserRouter, Outlet, RouterProvider, useLocation, useNavigate } from "react-router-dom";
 
 import "primereact/resources/themes/lara-light-cyan/theme.css";
 
@@ -24,6 +24,53 @@ import UpdateMuiltipe from "./page/UpdateMuiltipe";
 import Support from "./page/Support";
 
 const Layout = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  React.useEffect(() => {
+    // Danh sách các route cần đăng nhập CRM (trừ trang đăng nhập)
+    const routesRequireLogin = [
+      "/chuyen-chu-ky-so",
+      "/dong-bo-du-lieu",
+      "/chu-ky-so-hang-loat",
+      "/chuyen-to-khai",
+      "/xoa-cache-ky",
+      "/update-hoa-don",
+    ];
+
+    // Kiểm tra nếu route hiện tại cần đăng nhập CRM
+    if (routesRequireLogin.includes(location.pathname)) {
+      const storedAccountString = localStorage.getItem("account");
+      let isLoggedIn = false;
+
+      if (storedAccountString) {
+        try {
+          const storedAccount = JSON.parse(storedAccountString);
+          if (
+            storedAccount &&
+            storedAccount.username &&
+            storedAccount.password &&
+            storedAccount.madvcs
+          ) {
+            isLoggedIn = true;
+          }
+        } catch (error) {
+          console.error("Error parsing account:", error);
+        }
+      }
+
+      // Nếu chưa đăng nhập, cảnh báo và chuyển về trang đăng nhập
+      if (!isLoggedIn) {
+        alert(
+          "⚠️ Vui lòng đăng nhập CRM trước!\n\n" +
+          "Bạn cần đăng nhập vào CRM để sử dụng tính năng này.\n" +
+          "Vui lòng vào trang 'Đăng nhập CRM' để đăng nhập."
+        );
+        navigate("/tu-dong-dang-nhap");
+      }
+    }
+  }, [location.pathname, navigate]);
+
   return (
     <>
       <NavBar />

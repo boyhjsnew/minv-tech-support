@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Link, replace } from "react-router-dom";
+import { Link } from "react-router-dom";
 import "./InsertCKS.scss";
 
 import GetListCKS from "../../Utils/GetCKS";
@@ -26,7 +26,6 @@ const InsertCKS = () => {
   const [passWord, setPassword] = useState("");
 
   const [passWord1, setPassword1] = useState("");
-  const [cookies, setCokies] = useState("");
   const override = {
     display: "block",
     margin: "0 auto",
@@ -77,7 +76,20 @@ const InsertCKS = () => {
         if (!resetPasswordResponse.token) {
           throw new Error("Không thể reset password và lấy token mới");
         }
-        setPassword1(resetPasswordResponse.token);
+        const newPassword1 = resetPasswordResponse.token;
+        setPassword1(newPassword1);
+
+        // Lưu password1 vào localStorage
+        if (taxCode) {
+          const storageKey = `insertCKS_account_${taxCode}`;
+          const existing = localStorage.getItem(storageKey);
+          if (existing) {
+            const data = JSON.parse(existing);
+            data.password1 = newPassword1;
+            data.timestamp = Date.now();
+            localStorage.setItem(storageKey, JSON.stringify(data));
+          }
+        }
 
         const openNewWindow = () => {
           window.open(`https://${taxCode.replace("-", "")}.minvoice.com.vn`);
@@ -99,8 +111,24 @@ const InsertCKS = () => {
           throw new Error("Không thể đăng nhập 2.0");
         }
         const accountNewApp = tokenNewapp;
-        setAccount(accountNewApp.token.data.account);
-        setPassword(accountNewApp.token.data.passWord);
+        const newAccount = accountNewApp.token.data.account;
+        const newPassword = accountNewApp.token.data.passWord;
+        setAccount(newAccount);
+        setPassword(newPassword);
+
+        // Lưu vào localStorage để giữ lại khi chuyển trang
+        if (taxCode) {
+          const storageKey = `insertCKS_account_${taxCode}`;
+          localStorage.setItem(
+            storageKey,
+            JSON.stringify({
+              account: newAccount,
+              password: newPassword,
+              password1: resetPasswordResponse.token,
+              timestamp: Date.now(),
+            })
+          );
+        }
 
         // Bước 5: Lấy danh sách CKS
         const listCKSResponse = await GetListCKS(taxCode, tokenLogin);
@@ -204,10 +232,17 @@ const InsertCKS = () => {
     }
   };
   const handleInsertCKS = async () => {
-    if (cookies != null && stillValid.length > 0) {
+    // Lấy cookies từ localStorage
+    const currentCookies = localStorage.getItem(`minv_tool_cookies_${taxCode}`);
+
+    if (currentCookies && stillValid.length > 0) {
       try {
         setLoad(true);
-        const results = await inserCKSnewAPP(stillValid, taxCode, cookies);
+        const results = await inserCKSnewAPP(
+          stillValid,
+          taxCode,
+          currentCookies
+        );
 
         // Đếm số lượng thành công và thất bại
         const successCount = results.filter((r) => r?.success).length;
@@ -270,9 +305,31 @@ const InsertCKS = () => {
     console.log(listStillValid);
   }, [listCKS]);
 
+  // Khôi phục state từ localStorage khi component mount hoặc taxCode thay đổi
   useEffect(() => {
-    document.title = "Insert CKS";
-  }, []);
+    if (taxCode) {
+      const storageKey = `insertCKS_account_${taxCode}`;
+      const savedData = localStorage.getItem(storageKey);
+      if (savedData) {
+        try {
+          const data = JSON.parse(savedData);
+          // Kiểm tra xem data có còn hợp lệ không (không quá 24 giờ)
+          const maxAge = 24 * 60 * 60 * 1000; // 24 giờ
+          if (data.timestamp && Date.now() - data.timestamp < maxAge) {
+            if (data.account) setAccount(data.account);
+            if (data.password) setPassword(data.password);
+            if (data.password1) setPassword1(data.password1);
+          } else {
+            // Xóa data cũ
+            localStorage.removeItem(storageKey);
+          }
+        } catch (error) {
+          console.error("Error loading saved account data:", error);
+        }
+      }
+    }
+  }, [taxCode]);
+
   useEffect(() => {
     document.title = "Insert CKS";
   }, []);
@@ -508,7 +565,7 @@ const InsertCKS = () => {
           <button
             type="submit"
             className="p-button mt-1 fz-15"
-            onClick={() => handleInsertCKS(stillValid, taxCode, cookies)}
+            onClick={handleInsertCKS}
           >
             <i class="fa-solid fa-key"></i>
             <Link
