@@ -17,8 +17,12 @@ const mapProductDataAsync = async (productArray) => {
       "Mã hàng hóa *": data.ma_hv || "",
       "Tên hàng hóa *": data.ten_hv || "",
       "Đơn vị tính": data.ma_dvt || "",
-      "Đơn giá": data.gia_ban !== null && data.gia_ban !== undefined ? data.gia_ban : 0,
-      "Thuế suất thuế GTGT": data.pt_thue !== null && data.pt_thue !== undefined ? data.pt_thue : (data.ma_thue || 0),
+      "Đon giá":
+        data.gia_ban !== null && data.gia_ban !== undefined ? data.gia_ban : 0,
+      "Thuế suất thuế GTGT":
+        data.pt_thue !== null && data.pt_thue !== undefined
+          ? data.pt_thue
+          : data.ma_thue || 0,
     };
   });
 
@@ -34,7 +38,10 @@ const mapProductDataAsync = async (productArray) => {
 const uploadExcelToServer = async (taxCode = null, onUploadComplete = null) => {
   if (excelData.length === 0) {
     if (onUploadComplete) {
-      onUploadComplete({ success: false, message: "Chưa có dữ liệu hàng hóa!" });
+      onUploadComplete({
+        success: false,
+        message: "Chưa có dữ liệu hàng hóa!",
+      });
     }
     return;
   }
@@ -68,12 +75,20 @@ const uploadExcelToServer = async (taxCode = null, onUploadComplete = null) => {
     if (uploadResult.success) {
       console.log("✅ Upload thành công:", uploadResult.data);
       if (onUploadComplete) {
-        onUploadComplete({ success: true, message: uploadResult.message, data: uploadResult.data });
+        onUploadComplete({
+          success: true,
+          message: uploadResult.message,
+          data: uploadResult.data,
+        });
       }
     } else {
       console.error("❌ Upload thất bại:", uploadResult.error);
       if (onUploadComplete) {
-        onUploadComplete({ success: false, message: uploadResult.message, error: uploadResult.error });
+        onUploadComplete({
+          success: false,
+          message: uploadResult.message,
+          error: uploadResult.error,
+        });
       }
     }
   } catch (error) {
@@ -112,5 +127,9 @@ const setUploadConfig = (taxCode) => {
   currentTaxCode = taxCode;
 };
 
-export { mapProductDataAsync, exportToExcel, uploadExcelToServer, setUploadConfig };
-
+export {
+  mapProductDataAsync,
+  exportToExcel,
+  uploadExcelToServer,
+  setUploadConfig,
+};
