@@ -232,7 +232,6 @@ const InsertCKS = () => {
     }
   };
   const handleInsertCKS = async () => {
-    // Kiểm tra CKS còn hạn
     if (!stillValid || stillValid.length === 0) {
       toast.warning(
         <ToastNotify
@@ -244,41 +243,9 @@ const InsertCKS = () => {
       return;
     }
 
-    // Lấy cookies từ localStorage (để lấy RequestVerificationToken)
-    const currentCookies = localStorage.getItem(`minv_tool_cookies_${taxCode}`);
-    
-    // Kiểm tra cookies có tồn tại không
-    if (!currentCookies || currentCookies.trim().length === 0) {
-      toast.warning(
-        <ToastNotify
-          status={-1}
-          message={`Chưa có cookies. Vui lòng đăng nhập vào trang 2.0 (https://${taxCode}.minvoice.net) để tool tự động lấy cookies.`}
-        />,
-        { style: styleError }
-      );
-      return;
-    }
-
-    // Kiểm tra cookies có chứa XSRF-TOKEN không (cần thiết cho RequestVerificationToken)
-    const hasXSRFToken = currentCookies.includes("XSRF-TOKEN") || currentCookies.includes("RequestVerificationToken");
-    if (!hasXSRFToken) {
-      toast.warning(
-        <ToastNotify
-          status={-1}
-          message="Cookies không hợp lệ hoặc đã hết hạn. Vui lòng đăng nhập lại vào trang 2.0."
-        />,
-        { style: styleError }
-      );
-      return;
-    }
-
     try {
       setLoad(true);
-      const results = await inserCKSnewAPP(
-        stillValid,
-        taxCode,
-        currentCookies
-      );
+      const results = await inserCKSnewAPP(stillValid, taxCode);
 
       // Đếm số lượng thành công và thất bại
       const successCount = results.filter((r) => r?.success).length;
