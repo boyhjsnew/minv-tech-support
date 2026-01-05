@@ -1,15 +1,13 @@
 import React, { useState } from "react";
-import { InputTextarea } from "primereact/inputtextarea";
 import { Button } from "primereact/button";
-import { Link } from "react-router-dom";
 import GetTokenCRM from "../../Utils/GetTokenCRM";
 import ResetPasswordNewApp from "../../Utils/ResetPasswordNewApp";
 import { toast, ToastContainer } from "react-toastify";
 import { styleError, styleSuccess } from "../../components/ToastNotifyStyle";
 import ToastNotify from "../../components/ToastNotify";
+import axios from "axios";
 
 export default function IntrustMultipe() {
-  const [value, setValue] = useState("");
   const [accountList, setAccountList] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [accountStatus, setAccountStatus] = useState({});
@@ -19,45 +17,95 @@ export default function IntrustMultipe() {
   };
 
   const parseZaloMessage = (message) => {
-    // Tách các dòng trong tin nhắn
+    // Tách các dòng trong tin nhắn và lọc bỏ dòng trống
     const lines = message.split("\n").filter((line) => line.trim());
     const accounts = [];
-    let currentAccount = null;
+    let currentUsername = null;
+    let currentPassword = null;
 
+    // Duyệt qua từng dòng và tách các phần bằng khoảng trắng
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
+      if (!line) continue;
 
-      if (line.includes("Tên đăng nhập:")) {
-        // Nếu đã có account trước đó, thêm vào danh sách
-        if (currentAccount) {
-          accounts.push(currentAccount);
+      // Tách dòng thành các phần bằng khoảng trắng (có thể có nhiều khoảng trắng)
+      const parts = line.split(/\s+/).filter((part) => part.trim());
+
+      for (const part of parts) {
+        const trimmedPart = part.trim();
+
+        // Kiểm tra nếu phần này là username (bắt đầu bằng "ICA.")
+        if (trimmedPart.startsWith("ICA.")) {
+          // Nếu đã có username và password trước đó, lưu account đó
+          if (currentUsername && currentPassword !== null) {
+            const taxCode = currentUsername.replace("ICA.", "");
+            accounts.push({
+              taxCode: taxCode,
+              loginInfo: {
+                username: currentUsername,
+                password: "",
+              },
+              certInfo: {
+                username: currentUsername,
+                passwordCer: currentPassword,
+                pin: "123456",
+              },
+            });
+          }
+
+          // Bắt đầu account mới
+          currentUsername = trimmedPart;
+          currentPassword = null; // Reset password, chờ password tiếp theo
+        } else if (currentUsername) {
+          // Nếu đã có username và phần này không phải username, thì đây là password
+          if (currentPassword === null) {
+            currentPassword = trimmedPart;
+          } else {
+            // Nếu đã có password rồi mà vẫn có phần tiếp theo, có thể là username tiếp theo
+            // Lưu account hiện tại trước
+            const taxCode = currentUsername.replace("ICA.", "");
+            accounts.push({
+              taxCode: taxCode,
+              loginInfo: {
+                username: currentUsername,
+                password: "",
+              },
+              certInfo: {
+                username: currentUsername,
+                passwordCer: currentPassword,
+                pin: "123456",
+              },
+            });
+
+            // Bắt đầu account mới nếu phần này là username
+            if (trimmedPart.startsWith("ICA.")) {
+              currentUsername = trimmedPart;
+              currentPassword = null;
+            } else {
+              // Nếu không phải username, reset
+              currentUsername = null;
+              currentPassword = null;
+            }
+          }
         }
-
-        // Tạo account mới
-        const username = line.split(":")[1].trim();
-        const taxCode = username.replace("ICA.", "");
-
-        currentAccount = {
-          taxCode: taxCode,
-          loginInfo: {
-            username: username,
-            password: "",
-          },
-          certInfo: {
-            username: username,
-            pin: "123456", // Mã PIN mặc định
-            password: "123456", // Mật khẩu mặc định
-          },
-        };
-      } else if (line.includes("Mật khẩu:") && currentAccount) {
-        currentAccount.loginInfo.password = line.split(":")[1].trim();
-        currentAccount.certInfo.pin = line.split(":")[1].trim();
       }
     }
 
-    // Thêm account cuối cùng nếu có
-    if (currentAccount) {
-      accounts.push(currentAccount);
+    // Lưu account cuối cùng nếu có
+    if (currentUsername && currentPassword !== null) {
+      const taxCode = currentUsername.replace("ICA.", "");
+      accounts.push({
+        taxCode: taxCode,
+        loginInfo: {
+          username: currentUsername,
+          password: "",
+        },
+        certInfo: {
+          username: currentUsername,
+          passwordCer: currentPassword,
+          pin: "123456",
+        },
+      });
     }
 
     return accounts;
@@ -146,47 +194,36 @@ export default function IntrustMultipe() {
 
   const updateCKSStatus = async (taxCode, cksId, cksData) => {
     try {
-      console.log("Dữ liệu gửi đi:", {
-        taxCode,
-        cksId,
-        cksData,
-      });
+      const baseUrl = `https://${taxCode}.minvoice.net`;
 
-      const response = await fetch(
-        `https://${taxCode}.minvoice.net/api/api/app/token/${cksId}`,
+      await axios.put(
+        `${baseUrl}/api/api/app/token/${cksId}`,
         {
-          method: "PUT",
+          vender: cksData.vender,
+          subjectName: cksData.subjectName,
+          serialNumber: cksData.serialNumber,
+          dateFrom: cksData.dateFrom,
+          expireDate: cksData.expireDate,
+          form: cksData.form,
+          tokenType: cksData.tokenType,
+          used: true,
+        },
+        {
           headers: {
+            Accept: "application/json, text/plain, */*",
             "Content-Type": "application/json",
+            Referer: `${baseUrl}/`,
+            "User-Agent":
+              "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36",
+            "sec-ch-ua":
+              '"Google Chrome";v="143", "Chromium";v="143", "Not A(Brand";v="24"',
+            "sec-ch-ua-mobile": "?0",
+            "sec-ch-ua-platform": '"macOS"',
           },
-
           withCredentials: true,
-          body: JSON.stringify({
-            vender: cksData.vender,
-            subjectName: cksData.subjectName,
-            serialNumber: cksData.serialNumber,
-            dateFrom: cksData.dateFrom,
-            expireDate: cksData.expireDate,
-            form: cksData.form,
-            tokenType: cksData.tokenType,
-            used: true,
-          }),
         }
       );
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error("Response error:", {
-          status: response.status,
-          statusText: response.statusText,
-          errorText,
-        });
-        throw new Error(
-          `HTTP error! status: ${response.status}, message: ${errorText}`
-        );
-      }
-
-      // Không cần parse JSON vì API không trả về gì
       console.log(`Cập nhật trạng thái CKS thành công cho ${taxCode}`);
       return true;
     } catch (error) {
@@ -202,57 +239,41 @@ export default function IntrustMultipe() {
         try {
           console.log("Bắt đầu thêm CKS cho:", account.taxCode);
 
-          // Thêm CKS
-          const response = await fetch(
-            `https://${account.taxCode}.minvoice.net/api/api/app/token`,
+          const baseUrl = `https://${account.taxCode}.minvoice.net`;
+
+          // Thêm CKS theo curl command
+          const response = await axios.post(
+            `${baseUrl}/api/api/app/token`,
             {
-              method: "POST",
+              user: account.certInfo.username,
+              passwordCer: account.certInfo.passwordCer,
+              pin: account.certInfo.pin,
+              inputChange: "pin",
+              tokenType: 5,
+            },
+            {
               headers: {
+                Accept: "application/json, text/plain, */*",
                 "Content-Type": "application/json",
+                Referer: `${baseUrl}/`,
+                "User-Agent":
+                  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36",
+                "sec-ch-ua":
+                  '"Google Chrome";v="143", "Chromium";v="143", "Not A(Brand";v="24"',
+                "sec-ch-ua-mobile": "?0",
+                "sec-ch-ua-platform": '"macOS"',
               },
-              credentials: "include",
               withCredentials: true,
-              body: JSON.stringify({
-                user: account.certInfo.username,
-                passwordCer: account.certInfo.pin,
-                pin: "123456",
-                inputChange: "passwordCer",
-                tokenType: 5,
-              }),
             }
           );
 
-          if (!response.ok) {
-            const errorText = await response.text();
-            let errorMessage = "Lỗi không xác định";
-            try {
-              const errorJson = JSON.parse(errorText);
-              errorMessage = errorJson.error?.message || errorMessage;
-            } catch (e) {
-              errorMessage = errorText;
-            }
-            throw new Error(errorMessage);
-          }
-
-          // Kiểm tra content type trước khi parse JSON
-          const contentType = response.headers.get("content-type");
-          let cksData;
-
-          if (contentType && contentType.includes("application/json")) {
-            cksData = await response.json();
-          } else {
-            const text = await response.text();
-            console.log("Response text:", text);
-            cksData = { id: null, message: text || "Thêm CKS thành công" };
-          }
-
+          const cksData = response.data;
           console.log(`Thêm CKS thành công cho ${account.taxCode}:`, cksData);
 
-          // Cập nhật trạng thái sử dụng
+          // Cập nhật trạng thái sử dụng nếu có ID
           if (cksData && cksData.id) {
             console.log("Bắt đầu cập nhật trạng thái cho:", account.taxCode);
             await updateCKSStatus(account.taxCode, cksData.id, cksData);
-            // Cập nhật trạng thái thành công
             setAccountStatus((prev) => ({
               ...prev,
               [account.taxCode]: {
@@ -269,7 +290,6 @@ export default function IntrustMultipe() {
             );
           } else {
             console.warn("Không có ID CKS để cập nhật cho:", account.taxCode);
-            // Cập nhật trạng thái thành công
             setAccountStatus((prev) => ({
               ...prev,
               [account.taxCode]: {
@@ -288,17 +308,21 @@ export default function IntrustMultipe() {
         } catch (error) {
           console.error(`Lỗi chi tiết khi thêm CKS cho ${account.taxCode}:`, {
             error: error.message,
-            stack: error.stack,
+            response: error.response?.data,
           });
-          // Cập nhật trạng thái lỗi
+          const errorMessage =
+            error.response?.data?.error?.message ||
+            error.response?.data?.message ||
+            error.message ||
+            "Lỗi không xác định";
           setAccountStatus((prev) => ({
             ...prev,
-            [account.taxCode]: { status: "error", message: error.message },
+            [account.taxCode]: { status: "error", message: errorMessage },
           }));
           toast.error(
             <ToastNotify
               status={-1}
-              message={`Lỗi khi thêm CKS cho ${account.taxCode}: ${error.message}`}
+              message={`Lỗi khi thêm CKS cho ${account.taxCode}: ${errorMessage}`}
             />,
             { style: styleError }
           );
@@ -590,7 +614,7 @@ export default function IntrustMultipe() {
                       gap: "0.25rem",
                     }}
                   >
-                    {account.certInfo.password}
+                    {account.certInfo.passwordCer}
                   </span>
                 </div>
               </div>
