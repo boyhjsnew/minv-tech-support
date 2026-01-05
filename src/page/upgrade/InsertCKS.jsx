@@ -232,58 +232,88 @@ const InsertCKS = () => {
     }
   };
   const handleInsertCKS = async () => {
-    // Lấy cookies từ localStorage
-    const currentCookies = localStorage.getItem(`minv_tool_cookies_${taxCode}`);
-
-    if (currentCookies && stillValid.length > 0) {
-      try {
-        setLoad(true);
-        const results = await inserCKSnewAPP(
-          stillValid,
-          taxCode,
-          currentCookies
-        );
-
-        // Đếm số lượng thành công và thất bại
-        const successCount = results.filter((r) => r?.success).length;
-        const failCount = results.filter((r) => !r?.success).length;
-
-        if (successCount > 0) {
-          toast.success(
-            <ToastNotify
-              status={0}
-              message={`Đã thêm thành công ${successCount} CKS${
-                failCount > 0 ? `, thất bại ${failCount}` : ""
-              }`}
-            />,
-            { style: styleSuccess }
-          );
-        } else {
-          toast.error(
-            <ToastNotify
-              status={-1}
-              message={`Thất bại khi thêm CKS. Vui lòng kiểm tra cookies và thử lại.`}
-            />,
-            { style: styleError }
-          );
-        }
-      } catch (error) {
-        console.error("Error inserting CKS:", error);
-        toast.error(
-          <ToastNotify status={-1} message={`Lỗi: ${error.message}`} />,
-          { style: styleError }
-        );
-      } finally {
-        setLoad(false);
-      }
-    } else {
+    // Kiểm tra CKS còn hạn
+    if (!stillValid || stillValid.length === 0) {
       toast.warning(
         <ToastNotify
           status={-1}
-          message="Vui lòng lấy cookies từ trình duyệt và đảm bảo có CKS còn hạn"
+          message="Không có CKS còn hạn để thêm. Vui lòng kiểm tra lại danh sách CKS."
         />,
         { style: styleError }
       );
+      return;
+    }
+
+    // Lấy cookies từ localStorage (để lấy RequestVerificationToken)
+    const currentCookies = localStorage.getItem(`minv_tool_cookies_${taxCode}`);
+    
+    // Kiểm tra cookies có tồn tại không
+    if (!currentCookies || currentCookies.trim().length === 0) {
+      toast.warning(
+        <ToastNotify
+          status={-1}
+          message={`Chưa có cookies. Vui lòng đăng nhập vào trang 2.0 (https://${taxCode}.minvoice.net) để tool tự động lấy cookies.`}
+        />,
+        { style: styleError }
+      );
+      return;
+    }
+
+    // Kiểm tra cookies có chứa XSRF-TOKEN không (cần thiết cho RequestVerificationToken)
+    const hasXSRFToken = currentCookies.includes("XSRF-TOKEN") || currentCookies.includes("RequestVerificationToken");
+    if (!hasXSRFToken) {
+      toast.warning(
+        <ToastNotify
+          status={-1}
+          message="Cookies không hợp lệ hoặc đã hết hạn. Vui lòng đăng nhập lại vào trang 2.0."
+        />,
+        { style: styleError }
+      );
+      return;
+    }
+
+    try {
+      setLoad(true);
+      const results = await inserCKSnewAPP(
+        stillValid,
+        taxCode,
+        currentCookies
+      );
+
+      // Đếm số lượng thành công và thất bại
+      const successCount = results.filter((r) => r?.success).length;
+      const failCount = results.filter((r) => !r?.success).length;
+
+      if (successCount > 0) {
+        toast.success(
+          <ToastNotify
+            status={0}
+            message={`Đã thêm thành công ${successCount} CKS${
+              failCount > 0 ? `, thất bại ${failCount}` : ""
+            }`}
+          />,
+          { style: styleSuccess }
+        );
+      } else {
+        toast.error(
+          <ToastNotify
+            status={-1}
+            message={`Thất bại khi thêm CKS. Vui lòng kiểm tra lại cookies và đảm bảo đã đăng nhập vào trang 2.0.`}
+          />,
+          { style: styleError }
+        );
+      }
+    } catch (error) {
+      console.error("Error inserting CKS:", error);
+      toast.error(
+        <ToastNotify 
+          status={-1} 
+          message={`Lỗi: ${error.message || "Vui lòng kiểm tra lại cookies và đảm bảo đã đăng nhập vào trang 2.0."}`} 
+        />,
+        { style: styleError }
+      );
+    } finally {
+      setLoad(false);
     }
   };
   const copyToClipboard = (text) => {
