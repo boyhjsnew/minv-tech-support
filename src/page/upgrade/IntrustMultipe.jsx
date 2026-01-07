@@ -492,9 +492,26 @@ export default function IntrustMultipe() {
                 }}
               >
                 <span style={{ fontWeight: 600 }}>MST: </span>
-                <span>{account.taxCode}</span>
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "0.25rem",
+                  }}
+                >
+                  {account.taxCode}
+                  <i
+                    className="fa-solid fa-copy"
+                    style={{
+                      color: "gray",
+                      cursor: "pointer",
+                      fontSize: "12px",
+                      flexShrink: 0,
+                    }}
+                    onClick={() => copyToClipboard(account.taxCode)}
+                  ></i>
+                </span>
               </div>
-
               {/* Thông tin đăng nhập */}
               <div
                 style={{

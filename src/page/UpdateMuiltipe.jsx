@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import axios from "axios";
 import * as XLSX from "xlsx";
 
-const API_URL = "http://snnmttphcm.bienlai.com.vn/api/InvoiceApi78/Save";
+const API_URL = "http://bienlai70.vpdkddtphcm.com.vn/api/InvoiceApi78/Save";
 const AUTH_HEADER = "Bear O87316arj5+Od3Fqyy5hzdBfIuPk73eKqpAzBSvv8sY=";
 
 const COLUMN_KEYS = {
