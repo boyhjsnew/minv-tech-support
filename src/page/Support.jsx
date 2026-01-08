@@ -4,8 +4,12 @@ import "react-toastify/dist/ReactToastify.css";
 import ToastNotify from "../components/ToastNotify";
 import { styleSuccess, styleError } from "../components/ToastNotifyStyle";
 import axios from "axios";
+import GetInvoiceFiles from "./GetInvoiceFiles";
+import { useSearchParams } from "react-router-dom";
 
 const Support = () => {
+  const [searchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState("create-serial");
   const [khhdonList, setKhhdonList] = useState("");
   const [processing, setProcessing] = useState(false);
   const [results, setResults] = useState([]);
@@ -25,7 +29,12 @@ const Support = () => {
 
   useEffect(() => {
     document.title = "Hỗ trợ kỹ thuật";
-  }, []);
+    // Đọc query parameter từ URL
+    const tab = searchParams.get("tab");
+    if (tab === "get-files") {
+      setActiveTab("get-files");
+    }
+  }, [searchParams]);
 
   const createSerial = async (khhdon) => {
     const url = `${domain}/api/Serial/SerialSaveChange`;
@@ -144,146 +153,195 @@ const Support = () => {
       style={{ padding: "20px", maxWidth: "1200px", margin: "0 auto" }}
     >
       <ToastContainer />
-      <h1 style={{ marginBottom: "20px" }}>Tạo hàng loạt ký hiệu</h1>
 
-      <form onSubmit={handleSubmit} style={{ marginBottom: "30px" }}>
-        <div style={{ marginBottom: "20px" }}>
-          <label
-            style={{
-              display: "block",
-              marginBottom: "8px",
-              fontWeight: "bold",
-            }}
-          >
-            Danh sách ký hiệu (mỗi dòng một ký hiệu)
-          </label>
-          <textarea
-            value={khhdonList}
-            onChange={(e) => setKhhdonList(e.target.value)}
-            placeholder="1C26TES&#10;1C27TES&#10;1C28TES"
-            rows={15}
-            style={{
-              width: "100%",
-              padding: "10px",
-              border: "1px solid #ddd",
-              borderRadius: "4px",
-              fontSize: "14px",
-              fontFamily: "monospace",
-            }}
-          />
-          <div style={{ marginTop: "8px", fontSize: "12px", color: "#666" }}>
-            Nhập mỗi ký hiệu trên một dòng. Ví dụ: 1C26TES, 1C27TES, 1C28TES
-          </div>
-        </div>
-
+      {/* Tab Navigation */}
+      <div style={{ marginBottom: "20px", borderBottom: "2px solid #ddd" }}>
         <button
-          type="submit"
-          disabled={processing}
+          onClick={() => setActiveTab("create-serial")}
           style={{
-            padding: "12px 24px",
-            backgroundColor: processing ? "#ccc" : "#007bff",
-            color: "white",
+            padding: "10px 20px",
+            backgroundColor:
+              activeTab === "create-serial" ? "#007bff" : "transparent",
+            color: activeTab === "create-serial" ? "white" : "#007bff",
             border: "none",
-            borderRadius: "4px",
-            fontSize: "16px",
-            cursor: processing ? "not-allowed" : "pointer",
-            fontWeight: "bold",
+            borderBottom:
+              activeTab === "create-serial" ? "2px solid #007bff" : "none",
+            cursor: "pointer",
+            fontWeight: activeTab === "create-serial" ? "bold" : "normal",
+            marginRight: "10px",
           }}
         >
-          {processing ? "Đang xử lý..." : "Tạo hàng loạt"}
+          Tạo hàng loạt ký hiệu
         </button>
-      </form>
+        <button
+          onClick={() => setActiveTab("get-files")}
+          style={{
+            padding: "10px 20px",
+            backgroundColor:
+              activeTab === "get-files" ? "#007bff" : "transparent",
+            color: activeTab === "get-files" ? "white" : "#007bff",
+            border: "none",
+            borderBottom:
+              activeTab === "get-files" ? "2px solid #007bff" : "none",
+            cursor: "pointer",
+            fontWeight: activeTab === "get-files" ? "bold" : "normal",
+          }}
+        >
+          Lấy PDF và XML
+        </button>
+      </div>
 
-      {results.length > 0 && (
-        <div style={{ marginTop: "30px" }}>
-          <h2 style={{ marginBottom: "15px" }}>Kết quả</h2>
-          <div
-            style={{
-              maxHeight: "400px",
-              overflowY: "auto",
-              border: "1px solid #ddd",
-              borderRadius: "4px",
-            }}
-          >
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead>
-                <tr style={{ backgroundColor: "#f5f5f5" }}>
-                  <th
-                    style={{
-                      padding: "10px",
-                      textAlign: "left",
-                      borderBottom: "2px solid #ddd",
-                    }}
-                  >
-                    STT
-                  </th>
-                  <th
-                    style={{
-                      padding: "10px",
-                      textAlign: "left",
-                      borderBottom: "2px solid #ddd",
-                    }}
-                  >
-                    Ký hiệu
-                  </th>
-                  <th
-                    style={{
-                      padding: "10px",
-                      textAlign: "left",
-                      borderBottom: "2px solid #ddd",
-                    }}
-                  >
-                    Trạng thái
-                  </th>
-                  <th
-                    style={{
-                      padding: "10px",
-                      textAlign: "left",
-                      borderBottom: "2px solid #ddd",
-                    }}
-                  >
-                    Thông báo
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {results.map((result, index) => (
-                  <tr
-                    key={index}
-                    style={{
-                      backgroundColor: result.success ? "#d4edda" : "#f8d7da",
-                      borderBottom: "1px solid #ddd",
-                    }}
-                  >
-                    <td style={{ padding: "10px" }}>{index + 1}</td>
-                    <td style={{ padding: "10px", fontWeight: "bold" }}>
-                      {result.khhdon}
-                    </td>
-                    <td style={{ padding: "10px" }}>
-                      <span
+      {/* Tab Content */}
+      {activeTab === "create-serial" && (
+        <>
+          <h1 style={{ marginBottom: "20px" }}>Tạo hàng loạt ký hiệu</h1>
+
+          <form onSubmit={handleSubmit} style={{ marginBottom: "30px" }}>
+            <div style={{ marginBottom: "20px" }}>
+              <label
+                style={{
+                  display: "block",
+                  marginBottom: "8px",
+                  fontWeight: "bold",
+                }}
+              >
+                Danh sách ký hiệu (mỗi dòng một ký hiệu)
+              </label>
+              <textarea
+                value={khhdonList}
+                onChange={(e) => setKhhdonList(e.target.value)}
+                placeholder="1C26TES&#10;1C27TES&#10;1C28TES"
+                rows={15}
+                style={{
+                  width: "100%",
+                  padding: "10px",
+                  border: "1px solid #ddd",
+                  borderRadius: "4px",
+                  fontSize: "14px",
+                  fontFamily: "monospace",
+                }}
+              />
+              <div
+                style={{ marginTop: "8px", fontSize: "12px", color: "#666" }}
+              >
+                Nhập mỗi ký hiệu trên một dòng. Ví dụ: 1C26TES, 1C27TES, 1C28TES
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={processing}
+              style={{
+                padding: "12px 24px",
+                backgroundColor: processing ? "#ccc" : "#007bff",
+                color: "white",
+                border: "none",
+                borderRadius: "4px",
+                fontSize: "16px",
+                cursor: processing ? "not-allowed" : "pointer",
+                fontWeight: "bold",
+              }}
+            >
+              {processing ? "Đang xử lý..." : "Tạo hàng loạt"}
+            </button>
+          </form>
+
+          {results.length > 0 && (
+            <div style={{ marginTop: "30px" }}>
+              <h2 style={{ marginBottom: "15px" }}>Kết quả</h2>
+              <div
+                style={{
+                  maxHeight: "400px",
+                  overflowY: "auto",
+                  border: "1px solid #ddd",
+                  borderRadius: "4px",
+                }}
+              >
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead>
+                    <tr style={{ backgroundColor: "#f5f5f5" }}>
+                      <th
                         style={{
-                          padding: "4px 8px",
-                          borderRadius: "4px",
-                          backgroundColor: result.success
-                            ? "#28a745"
-                            : "#dc3545",
-                          color: "white",
-                          fontSize: "12px",
+                          padding: "10px",
+                          textAlign: "left",
+                          borderBottom: "2px solid #ddd",
                         }}
                       >
-                        {result.success ? "Thành công" : "Thất bại"}
-                      </span>
-                    </td>
-                    <td style={{ padding: "10px", fontSize: "12px" }}>
-                      {result.message}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+                        STT
+                      </th>
+                      <th
+                        style={{
+                          padding: "10px",
+                          textAlign: "left",
+                          borderBottom: "2px solid #ddd",
+                        }}
+                      >
+                        Ký hiệu
+                      </th>
+                      <th
+                        style={{
+                          padding: "10px",
+                          textAlign: "left",
+                          borderBottom: "2px solid #ddd",
+                        }}
+                      >
+                        Trạng thái
+                      </th>
+                      <th
+                        style={{
+                          padding: "10px",
+                          textAlign: "left",
+                          borderBottom: "2px solid #ddd",
+                        }}
+                      >
+                        Thông báo
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {results.map((result, index) => (
+                      <tr
+                        key={index}
+                        style={{
+                          backgroundColor: result.success
+                            ? "#d4edda"
+                            : "#f8d7da",
+                          borderBottom: "1px solid #ddd",
+                        }}
+                      >
+                        <td style={{ padding: "10px" }}>{index + 1}</td>
+                        <td style={{ padding: "10px", fontWeight: "bold" }}>
+                          {result.khhdon}
+                        </td>
+                        <td style={{ padding: "10px" }}>
+                          <span
+                            style={{
+                              padding: "4px 8px",
+                              borderRadius: "4px",
+                              backgroundColor: result.success
+                                ? "#28a745"
+                                : "#dc3545",
+                              color: "white",
+                              fontSize: "12px",
+                            }}
+                          >
+                            {result.success ? "Thành công" : "Thất bại"}
+                          </span>
+                        </td>
+                        <td style={{ padding: "10px", fontSize: "12px" }}>
+                          {result.message}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </>
       )}
+
+      {activeTab === "get-files" && <GetInvoiceFiles />}
     </div>
   );
 };

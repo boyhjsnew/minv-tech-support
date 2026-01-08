@@ -29,4 +29,10 @@ export const MenuItems = [
     cName: "dropdown-link",
     icon: "icon-sub fa-regular fa-circle",
   },
+  {
+    title: "Lấy PDF và XML hàng loạt",
+    path: "/ho-tro-ky-thuat?tab=get-files",
+    cName: "dropdown-link",
+    icon: "icon-sub fa-regular fa-circle",
+  },
 ];

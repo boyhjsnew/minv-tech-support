@@ -182,6 +182,21 @@ const NavBar = () => {
               <span>Cập nhật hoá đơn hàng loạt</span>
             </Link>
           </li>
+          <li
+            role="none"
+            style={{ alignItems: "center" }}
+            className={
+              getLocation.pathname === "/ho-tro-ky-thuat" ? "active" : ""
+            }
+          >
+            <Link className="link" to="/ho-tro-ky-thuat">
+              <span
+                style={{ paddingRight: "5px" }}
+                className="fa-solid fa-wrench"
+              ></span>
+              <span>Hỗ trợ kỹ thuật</span>
+            </Link>
+          </li>
           {/* <li
             role="none"
             style={{ alignItems: "center" }}
