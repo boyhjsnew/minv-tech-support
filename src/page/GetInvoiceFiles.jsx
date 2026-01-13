@@ -457,6 +457,31 @@ const GetInvoiceFiles = () => {
     }
   };
 
+  // Tạo và tải file Excel mẫu
+  const downloadSampleExcel = () => {
+    // Tạo dữ liệu mẫu
+    const sampleData = [
+      { "Ký hiệu": "1C25TBK", "Số hóa đơn": "25" },
+      { "Ký hiệu": "1C26TBK", "Số hóa đơn": "26" },
+      { "Ký hiệu": "1C27TBK", "Số hóa đơn": "27" },
+    ];
+
+    // Tạo workbook và worksheet
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(sampleData);
+
+    // Thêm worksheet vào workbook
+    XLSX.utils.book_append_sheet(wb, ws, "HoaDon");
+
+    // Tạo file Excel và tải xuống
+    XLSX.writeFile(wb, "Mau_File_HoaDon.xlsx");
+
+    toast.success(
+      <ToastNotify status={0} message="Đã tải file Excel mẫu thành công" />,
+      { style: styleSuccess }
+    );
+  };
+
   return (
     <div
       style={{
@@ -474,15 +499,37 @@ const GetInvoiceFiles = () => {
       </h2>
 
       <div style={{ marginBottom: "20px" }}>
-        <label
-          style={{
-            display: "block",
-            marginBottom: "8px",
-            fontWeight: "bold",
-          }}
-        >
-          Chọn file Excel (bắt buộc có 2 cột: "Ký hiệu" và "Số hóa đơn")
-        </label>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px" }}>
+          <label
+            style={{
+              display: "block",
+              fontWeight: "bold",
+              flex: 1,
+            }}
+          >
+            Chọn file Excel (bắt buộc có 2 cột: "Ký hiệu" và "Số hóa đơn")
+          </label>
+          <button
+            onClick={downloadSampleExcel}
+            style={{
+              padding: "8px 16px",
+              backgroundColor: "#28a745",
+              color: "white",
+              border: "none",
+              borderRadius: "4px",
+              fontSize: "14px",
+              cursor: "pointer",
+              fontWeight: "500",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+            }}
+            title="Tải file Excel mẫu"
+          >
+            <i className="fa-solid fa-download"></i>
+            Tải file mẫu
+          </button>
+        </div>
         <input
           type="file"
           accept=".xlsx,.xls"
