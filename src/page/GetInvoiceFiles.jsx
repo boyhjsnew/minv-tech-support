@@ -15,6 +15,28 @@ const GetInvoiceFiles = () => {
 
   const domain = "http://bienlai70.vpdkddtphcm.com.vn";
   const authToken = "O87316arj5+Od3Fqyy5hzdBfIuPk73eKqpAzBSvv8sY=";
+  
+  // Hàm helper để gọi API qua proxy nếu cần (khi chạy trên HTTPS)
+  const callAPI = async (url, options = {}) => {
+    // Kiểm tra nếu đang chạy trên HTTPS và URL là HTTP, dùng proxy
+    const isHTTPS = window.location.protocol === 'https:';
+    const isHTTPUrl = url.startsWith('http://');
+    
+    if (isHTTPS && isHTTPUrl) {
+      // Sử dụng proxy API
+      const proxyUrl = `/api/proxy?url=${encodeURIComponent(url)}`;
+      return axios.get(proxyUrl, {
+        ...options,
+        params: {
+          ...options.params,
+          url: url
+        }
+      });
+    }
+    
+    // Gọi trực tiếp nếu không cần proxy
+    return axios(url, options);
+  };
 
   // Parse Excel file
   const parseExcelFile = (file) => {
@@ -145,12 +167,23 @@ const GetInvoiceFiles = () => {
         seri
       )}&number=${encodeURIComponent(number)}`;
 
-      const response = await axios.get(url, {
-        headers: {
-          Accept: "*/*",
-          Authorization: `Bear ${authToken}`,
-        },
-      });
+      // Sử dụng proxy nếu cần
+      const isHTTPS = window.location.protocol === 'https:';
+      let response;
+      
+      if (isHTTPS) {
+        // Gọi qua proxy - truyền headers qua query params
+        const proxyUrl = `/api/proxy?url=${encodeURIComponent(url)}&authorization=${encodeURIComponent(`Bear ${authToken}`)}&accept=*/*`;
+        response = await axios.get(proxyUrl);
+      } else {
+        // Gọi trực tiếp
+        response = await axios.get(url, {
+          headers: {
+            Accept: "*/*",
+            Authorization: `Bear ${authToken}`,
+          },
+        });
+      }
 
       if (response.data && response.data.code === "00" && response.data.data) {
         return {
@@ -176,22 +209,33 @@ const GetInvoiceFiles = () => {
   const getXMLFile = async (invoiceId) => {
     try {
       const url = `${domain}/api/Invoice68/ExportFileXML?id=${invoiceId}`;
-
-      const response = await axios.get(url, {
-        headers: {
-          Accept: "*/*",
-          "Accept-Language":
-            "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7,fr-FR;q=0.6,fr;q=0.5",
-          Authorization: `Bear ${authToken};VP;vi`,
-          "Cache-Control": "no-cache",
-          Connection: "keep-alive",
-          Pragma: "no-cache",
-          Referer: `${domain}/`,
-          "User-Agent":
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36",
-        },
-        responseType: "blob",
-      });
+      const isHTTPS = window.location.protocol === 'https:';
+      
+      let response;
+      if (isHTTPS) {
+        // Gọi qua proxy - truyền headers qua query params
+        const proxyUrl = `/api/proxy?url=${encodeURIComponent(url)}&authorization=${encodeURIComponent(`Bear ${authToken};VP;vi`)}&accept=*/*&accept-language=${encodeURIComponent("vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7,fr-FR;q=0.6,fr;q=0.5")}&cache-control=no-cache&connection=keep-alive&pragma=no-cache&referer=${encodeURIComponent(`${domain}/`)}&user-agent=${encodeURIComponent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36")}`;
+        response = await axios.get(proxyUrl, {
+          responseType: "blob",
+        });
+      } else {
+        // Gọi trực tiếp
+        response = await axios.get(url, {
+          headers: {
+            Accept: "*/*",
+            "Accept-Language":
+              "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7,fr-FR;q=0.6,fr;q=0.5",
+            Authorization: `Bear ${authToken};VP;vi`,
+            "Cache-Control": "no-cache",
+            Connection: "keep-alive",
+            Pragma: "no-cache",
+            Referer: `${domain}/`,
+            "User-Agent":
+              "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36",
+          },
+          responseType: "blob",
+        });
+      }
 
       return {
         success: true,
@@ -209,23 +253,34 @@ const GetInvoiceFiles = () => {
   const getPDFFile = async (invoiceId) => {
     try {
       const url = `${domain}/api/Invoice68/PrintInvoice?id=${invoiceId}&type=PDF&inchuyendoi=false`;
-
-      const response = await axios.get(url, {
-        headers: {
-          Accept: "*/*",
-          "Accept-Language":
-            "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7,fr-FR;q=0.6,fr;q=0.5",
-          Authorization: `Bear ${authToken};VP;vi`,
-          "Cache-Control": "no-cache",
-          Connection: "keep-alive",
-          "Content-type": "application/json",
-          Pragma: "no-cache",
-          Referer: `${domain}/`,
-          "User-Agent":
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36",
-        },
-        responseType: "blob",
-      });
+      const isHTTPS = window.location.protocol === 'https:';
+      
+      let response;
+      if (isHTTPS) {
+        // Gọi qua proxy - truyền headers qua query params
+        const proxyUrl = `/api/proxy?url=${encodeURIComponent(url)}&authorization=${encodeURIComponent(`Bear ${authToken};VP;vi`)}&accept=*/*&accept-language=${encodeURIComponent("vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7,fr-FR;q=0.6,fr;q=0.5")}&cache-control=no-cache&connection=keep-alive&content-type=application/json&pragma=no-cache&referer=${encodeURIComponent(`${domain}/`)}&user-agent=${encodeURIComponent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36")}`;
+        response = await axios.get(proxyUrl, {
+          responseType: "blob",
+        });
+      } else {
+        // Gọi trực tiếp
+        response = await axios.get(url, {
+          headers: {
+            Accept: "*/*",
+            "Accept-Language":
+              "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7,fr-FR;q=0.6,fr;q=0.5",
+            Authorization: `Bear ${authToken};VP;vi`,
+            "Cache-Control": "no-cache",
+            Connection: "keep-alive",
+            "Content-type": "application/json",
+            Pragma: "no-cache",
+            Referer: `${domain}/`,
+            "User-Agent":
+              "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36",
+          },
+          responseType: "blob",
+        });
+      }
 
       return {
         success: true,
