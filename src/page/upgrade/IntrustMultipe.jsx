@@ -345,9 +345,11 @@ export default function IntrustMultipe() {
   return (
     <div
       style={{
-        padding: "2rem",
+        padding: "1rem",
         margin: "0 auto",
+        maxWidth: "100%",
       }}
+      className="px-4 sm:px-6 lg:px-8"
     >
       <ToastContainer
         autoClose={2000}
@@ -364,16 +366,18 @@ export default function IntrustMultipe() {
       <div
         style={{
           textAlign: "center",
-          marginBottom: "2rem",
+          marginBottom: "1.5rem",
         }}
+        className="mb-4 sm:mb-6 lg:mb-8"
       >
         <p
           style={{
             fontWeight: 600,
             color: "#0069b4",
-            fontSize: "23px",
+            fontSize: "18px",
             marginBottom: "10px",
           }}
+          className="text-lg sm:text-xl lg:text-2xl"
         >
           Thêm chữ ký số IntrustCA hàng loạt
         </p>
@@ -383,12 +387,13 @@ export default function IntrustMultipe() {
       <div
         style={{
           backgroundColor: "#fff",
-          padding: "1.5rem",
+          padding: "1rem",
           borderRadius: "8px",
           boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
-          marginBottom: "2rem",
-          margin: "0 auto 2rem auto",
+          marginBottom: "1.5rem",
+          margin: "0 auto 1.5rem auto",
         }}
+        className="p-4 sm:p-6 mb-4 sm:mb-6"
       >
         <textarea
           id="zaloMessages"
@@ -416,9 +421,10 @@ export default function IntrustMultipe() {
           padding: "1rem",
           borderRadius: "8px",
           boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
-          marginBottom: "2rem",
+          marginBottom: "1.5rem",
           border: "1px solid #e5e7eb",
         }}
+        className="p-4 sm:p-6 mb-4 sm:mb-6"
       >
         <h3
           style={{
@@ -434,10 +440,11 @@ export default function IntrustMultipe() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(4, 1fr)",
+            gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
             gap: "1rem",
             padding: "0.5rem 0",
           }}
+          className="grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
         >
           {accountList.map((account, index) => (
             <div
@@ -452,9 +459,10 @@ export default function IntrustMultipe() {
                     : accountStatus[account.taxCode]?.status === "error"
                     ? "#fef2f2" // Màu đỏ nhạt cho lỗi
                     : "#f9fafb", // Màu mặc định
-                fontSize: "13px",
+                fontSize: "12px",
                 position: "relative",
               }}
+              className="p-3 sm:p-4 text-xs sm:text-sm"
             >
               {/* Hiển thị trạng thái */}
               {accountStatus[account.taxCode] && (
@@ -663,6 +671,7 @@ export default function IntrustMultipe() {
           gap: "1rem",
           justifyContent: "center",
         }}
+        className="flex-wrap px-2"
       >
         <Button
           style={{
@@ -675,6 +684,7 @@ export default function IntrustMultipe() {
             minWidth: "200px",
             justifyContent: "center",
           }}
+          className="w-full sm:w-auto"
           onClick={() => insertMultipleCKS(accountList)}
           disabled={isLoading || accountList.length === 0}
         >

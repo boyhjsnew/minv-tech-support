@@ -224,51 +224,107 @@ export default function Customers() {
   ];
 
   return (
-    <div className="pt-[10px] w-full flex flex-col pl-[24px] gap-3 ">
-      <div className="flex flex-row w-full">
-        {" "}
-        <div className="flex-1 flex h-full pr-12">
-          <Button
-            loading={loading}
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/50 px-4 sm:px-6 lg:px-8 py-4 flex flex-col gap-5">
+      {/* Header Section */}
+      <div className="text-center mb-2 animate-fade-in">
+        <div className="inline-flex items-center justify-center w-14 h-14 bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-600 rounded-2xl shadow-xl mb-3 transform hover:scale-105 transition-transform duration-300">
+          <i className="fa-solid fa-sync-alt text-white text-xl animate-spin-slow"></i>
+        </div>
+        <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 bg-clip-text text-transparent mb-1">
+          Đồng bộ dữ liệu
+        </h1>
+        <p className="text-gray-600 text-sm sm:text-base">
+          Đồng bộ khách hàng và hàng hóa từ hệ thống cũ lên hệ thống mới
+        </p>
+      </div>
+
+      {/* Khách hàng */}
+      <div className="grid lg:grid-cols-[260px,1fr] gap-4 items-start">
+        <div className="flex flex-col gap-3">
+          <button
             onClick={fetchDataDMKH}
-            style={{ height: "40px", width: "230px" }}
-            label="Đồng bộ khách hàng"
-          />
+            disabled={loading}
+            className={`
+              group relative w-full h-12 rounded-xl font-semibold text-white
+              bg-gradient-to-r from-blue-500 via-blue-600 to-indigo-600
+              shadow-lg hover:shadow-xl transform transition-all duration-300
+              disabled:opacity-70 disabled:cursor-not-allowed disabled:transform-none
+              ${!loading ? 'hover:scale-105 active:scale-95' : ''}
+              overflow-hidden
+            `}
+          >
+            {loading ? (
+              <span className="flex items-center justify-center gap-3 relative z-10">
+                <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent"></div>
+                <span>Đang xử lý...</span>
+              </span>
+            ) : (
+              <span className="flex items-center justify-center gap-3 relative z-10">
+                <i className="fa-solid fa-users text-lg"></i>
+                <span>Đồng bộ khách hàng</span>
+              </span>
+            )}
+            <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000"></div>
+          </button>
         </div>
         <div
-          className="w-full flex flex-col border-2 rounded-lg  p-6 shadow-lg "
-          style={{
-            boxShadow: loading
-              ? "0px 4px 10px rgba(59, 130, 246, 0.5)"
-              : "none",
-          }}
+          className={`
+            w-full flex flex-col rounded-2xl p-4 sm:p-5 shadow-xl bg-white
+            border border-gray-100 transition-all duration-500
+            ${loading ? 'ring-4 ring-blue-200 shadow-2xl shadow-blue-200/50' : ''}
+          `}
         >
+          {/* Header Card - Horizontal Layout */}
+          <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-100 flex-wrap gap-2">
+            <div className="flex items-center gap-3 flex-1 min-w-[250px]">
+              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-blue-100 to-indigo-100 flex items-center justify-center shadow-sm">
+                <i className="fa-solid fa-users text-blue-600"></i>
+              </div>
+              <h3 className="text-sm sm:text-base font-bold text-gray-800">Đồng bộ khách hàng</h3>
+              <span className={`w-2 h-2 rounded-full ${loading ? 'bg-blue-500 animate-pulse' : activeIndex >= 0 ? 'bg-green-500' : 'bg-gray-300'}`}></span>
+              <span className="text-xs text-gray-500">
+                {activeIndex >= 0 ? steps[activeIndex]?.label : "Chưa bắt đầu"}
+              </span>
+            </div>
+            {taxCode && (
+              <span className="px-2.5 py-1 rounded-md bg-blue-50 text-blue-700 text-xs font-semibold border border-blue-200">
+                MST: {taxCode}
+              </span>
+            )}
+          </div>
+
           <Steps
             model={steps}
             activeIndex={activeIndex}
             onSelect={(e) => setActiveIndex(e.index)}
             readOnly={true}
+            className="mb-3"
           />
 
-          <div className="flex w-full gap-[1rem] mt-6">
-            {/* Tổng số bản ghi */}
-            <InfoCard title="Số lượng bản ghi" value={customerRaws?.length} />
-
-            {/* Trạng thái Mapping */}
-            <InfoCard
-              title="Trạng thái"
-              value={activeIndex >= 1 ? "Xong" : ""}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <InfoCard 
+              title="Số lượng bản ghi" 
+              value={customerRaws?.length || 0}
+              icon="fa-solid fa-database"
+              color="blue"
             />
 
-            {/* Xuất & Upload Excel */}
-            <div className="flex-1 border-2 border-dotted rounded-lg p-4">
-              <InfoRow
-                title="Tải file Excel"
-                iconClass="fa-solid fa-file-excel text-green-600 cursor-pointer"
-                onClick={exportToExcel}
-              />
+            <InfoCard
+              title="Trạng thái"
+              value={activeIndex >= 1 ? "Hoàn thành" : activeIndex >= 0 ? "Đang xử lý" : "Chưa bắt đầu"}
+              icon="fa-solid fa-check-circle"
+              color={activeIndex >= 1 ? "green" : activeIndex >= 0 ? "yellow" : "gray"}
+            />
 
-              {/* 🆕 Input hidden để chọn file */}
+            <div className="flex-1 bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-4 border-2 border-dashed border-green-200 hover:border-green-300 transition-all duration-300 hover:shadow-md">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-sm font-semibold text-gray-700">Tải file Excel</span>
+                <i 
+                  className="fa-solid fa-file-excel text-green-600 text-xl cursor-pointer hover:scale-110 transition-transform duration-200" 
+                  onClick={exportToExcel}
+                  title="Tải file Excel"
+                ></i>
+              </div>
               <input
                 type="file"
                 accept=".xls, .xlsx"
@@ -278,119 +334,157 @@ export default function Customers() {
               />
               <label
                 htmlFor="file-upload"
-                className="text-blue-600 text-[13px] cursor-pointer border-2 bg-gray p-1"
+                className="inline-flex items-center gap-2 px-3 py-2 bg-white text-blue-600 text-sm font-medium cursor-pointer border-2 border-blue-200 rounded-lg hover:bg-blue-50 hover:border-blue-300 transition-all duration-200 shadow-sm hover:shadow"
               >
-                Chọn file
+                <i className="fa-solid fa-upload"></i>
+                <span>Chọn file</span>
               </label>
             </div>
 
-            {/* Trạng thái Hoàn tất */}
-            <div className="flex-1 border-2 border-dotted rounded-lg p-4">
-              {" "}
-              <div
-                className=""
-                title="Kết quả"
-                value={errorMessage.length > 0 ? "Thất bại" : "Thành công"}
-              >
-                <div className="card flex justify-content-center">
-                  <Toast ref={toast} />
-                  {errorMessage.length > 0 ? (
-                    <Button onClick={show} label="Thất bại" />
-                  ) : errorMessage.length === 0 ? (
-                    ""
-                  ) : !errorMessage ? (
-                    "Thành công"
-                  ) : (
-                    ""
-                  )}
-                </div>
+            <div className="flex-1 bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-4 border-2 border-dashed border-purple-200">
+              <div className="card flex justify-content-center">
+                <Toast ref={toast} />
+                {errorMessage.length > 0 && (
+                  <button
+                    onClick={show}
+                    className="w-full px-4 py-2 bg-red-500 text-white rounded-lg font-medium hover:bg-red-600 transition-colors duration-200 shadow-md hover:shadow-lg"
+                  >
+                    <i className="fa-solid fa-exclamation-triangle mr-2"></i>
+                    Xem lỗi
+                  </button>
+                )}
               </div>
             </div>
           </div>
         </div>
       </div>
-      <div className="flex flex-row w-full">
-        {" "}
-        <div className="flex-1 flex h-full pr-12">
-          <Button
-            loading={loadingHH}
+
+      {/* Hàng hóa */}
+      <div className="grid lg:grid-cols-[260px,1fr] gap-4 items-start">
+        <div className="flex flex-col gap-3">
+          <button
             onClick={fetchDataDMHH}
-            style={{ height: "40px", width: "230px" }}
-            label="Đồng bộ hàng hoá"
-          />
+            disabled={loadingHH}
+            className={`
+              group relative w-full h-12 rounded-xl font-semibold text-white
+              bg-gradient-to-r from-indigo-500 via-purple-600 to-pink-600
+              shadow-lg hover:shadow-xl transform transition-all duration-300
+              disabled:opacity-70 disabled:cursor-not-allowed disabled:transform-none
+              ${!loadingHH ? 'hover:scale-105 active:scale-95' : ''}
+              overflow-hidden
+            `}
+          >
+            {loadingHH ? (
+              <span className="flex items-center justify-center gap-3 relative z-10">
+                <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent"></div>
+                <span>Đang xử lý...</span>
+              </span>
+            ) : (
+              <span className="flex items-center justify-center gap-3 relative z-10">
+                <i className="fa-solid fa-boxes-stacked text-lg"></i>
+                <span>Đồng bộ hàng hoá</span>
+              </span>
+            )}
+            <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000"></div>
+          </button>
         </div>
         <div
-          className="w-full flex flex-col border-2 rounded-lg p-6"
-          style={{
-            boxShadow: loadingHH
-              ? "0px 4px 10px rgba(59, 130, 246, 0.5)"
-              : "none",
-          }}
+          className={`
+            w-full flex flex-col rounded-2xl p-4 sm:p-5 shadow-xl bg-white
+            border border-gray-100 transition-all duration-500
+            ${loadingHH ? 'ring-4 ring-indigo-200 shadow-2xl shadow-indigo-200/50' : ''}
+          `}
         >
+          {/* Header Card - Horizontal Layout */}
+          <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-100 flex-wrap gap-2">
+            <div className="flex items-center gap-3 flex-1 min-w-[250px]">
+              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center shadow-sm">
+                <i className="fa-solid fa-boxes-stacked text-indigo-600"></i>
+              </div>
+              <h3 className="text-sm sm:text-base font-bold text-gray-800">Đồng bộ hàng hoá</h3>
+              <span className={`w-2 h-2 rounded-full ${loadingHH ? 'bg-indigo-500 animate-pulse' : activeIndex >= 0 ? 'bg-green-500' : 'bg-gray-300'}`}></span>
+              <span className="text-xs text-gray-500">
+                {activeIndex >= 0 ? steps_HH[activeIndex]?.label : "Chưa bắt đầu"}
+              </span>
+            </div>
+            {taxCode && (
+              <span className="px-2.5 py-1 rounded-md bg-indigo-50 text-indigo-700 text-xs font-semibold border border-indigo-200">
+                MST: {taxCode}
+              </span>
+            )}
+          </div>
+
           <Steps
             model={steps_HH}
             activeIndex={activeIndex}
             onSelect={(e) => setActiveIndex(e.index)}
             readOnly={false}
+            className="mb-3"
           />
 
-          <div className="flex w-full gap-[1rem] mt-6">
-            {/* Tổng số bản ghi */}
-            <InfoCard title="Số lượng bản ghi" value={customerRaws?.length} />
-
-            {/* Trạng thái Mapping */}
-            <InfoCard
-              title="Trạng thái"
-              value={activeIndex >= 1 ? "Xong" : ""}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <InfoCard 
+              title="Số lượng bản ghi" 
+              value={customerRaws?.length || 0}
+              icon="fa-solid fa-database"
+              color="indigo"
             />
 
-            {/* Xuất & Upload Excel - Hàng hóa */}
-            <div className="flex-1 border-2 border-dotted rounded-lg p-4">
-              <InfoRow
-                title="Tải file Excel"
-                iconClass="fa-solid fa-file-excel text-green-600 cursor-pointer"
-                onClick={async () => {
-                  if (!taxCode) {
-                    toast.current.show({
-                      severity: "warn",
-                      summary: "Cảnh báo",
-                      detail: "Vui lòng nhập mã số thuế.",
-                    });
-                    return;
-                  }
-                  
-                  setLoadingUploadHH(true);
-                  try {
-                    // Tự động export và upload (browser sẽ tự động gửi cookies theo domain)
-                    await exportToExcelHH(taxCode, (result) => {
-                      setLoadingUploadHH(false);
-                      if (result.success) {
-                        toast.current.show({
-                          severity: "success",
-                          summary: "Thành công",
-                          detail: result.message || "Đã export và upload Excel thành công!",
-                        });
-                        setActiveIndex(3);
-                      } else {
-                        toast.current.show({
-                          severity: "error",
-                          summary: "Lỗi",
-                          detail: result.message || "Upload thất bại!",
-                        });
-                      }
-                    });
-                  } catch (error) {
-                    setLoadingUploadHH(false);
-                    toast.current.show({
-                      severity: "error",
-                      summary: "Lỗi",
-                      detail: error.message || "Có lỗi xảy ra!",
-                    });
-                  }
-                }}
-              />
+            <InfoCard
+              title="Trạng thái"
+              value={activeIndex >= 1 ? "Hoàn thành" : activeIndex >= 0 ? "Đang xử lý" : "Chưa bắt đầu"}
+              icon="fa-solid fa-check-circle"
+              color={activeIndex >= 1 ? "green" : activeIndex >= 0 ? "yellow" : "gray"}
+            />
 
-              {/* 🆕 Input hidden để chọn file */}
+            <div className="flex-1 bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-4 border-2 border-dashed border-green-200 hover:border-green-300 transition-all duration-300 hover:shadow-md">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-sm font-semibold text-gray-700">Tải file Excel</span>
+                <i 
+                  className="fa-solid fa-file-excel text-green-600 text-xl cursor-pointer hover:scale-110 transition-transform duration-200" 
+                  onClick={async () => {
+                    if (!taxCode) {
+                      toast.current.show({
+                        severity: "warn",
+                        summary: "Cảnh báo",
+                        detail: "Vui lòng nhập mã số thuế.",
+                      });
+                      return;
+                    }
+
+                    setLoadingUploadHH(true);
+                    try {
+                      await exportToExcelHH(taxCode, (result) => {
+                        setLoadingUploadHH(false);
+                        if (result.success) {
+                          toast.current.show({
+                            severity: "success",
+                            summary: "Thành công",
+                            detail:
+                              result.message ||
+                              "Đã export và upload Excel thành công!",
+                          });
+                          setActiveIndex(3);
+                        } else {
+                          toast.current.show({
+                            severity: "error",
+                            summary: "Lỗi",
+                            detail: result.message || "Upload thất bại!",
+                          });
+                        }
+                      });
+                    } catch (error) {
+                      setLoadingUploadHH(false);
+                      toast.current.show({
+                        severity: "error",
+                        summary: "Lỗi",
+                        detail: error.message || "Có lỗi xảy ra!",
+                      });
+                    }
+                  }}
+                  title="Tải file Excel"
+                ></i>
+              </div>
               <input
                 type="file"
                 accept=".xls, .xlsx"
@@ -400,32 +494,25 @@ export default function Customers() {
               />
               <label
                 htmlFor="file-upload-hh"
-                className="text-blue-600 text-[13px] cursor-pointer border-2 bg-gray p-1"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-white text-blue-600 text-sm font-medium cursor-pointer border-2 border-blue-200 rounded-lg hover:bg-blue-50 hover:border-blue-300 transition-all duration-200 shadow-sm hover:shadow"
               >
-                Chọn file
+                <i className="fa-solid fa-upload"></i>
+                <span>Chọn file</span>
               </label>
             </div>
 
-            {/* Trạng thái Hoàn tất */}
-            <div className="flex-1 border-2 border-dotted rounded-lg p-4">
-              {" "}
-              <div
-                className=""
-                title="Kết quả"
-                value={errorMessage.length > 0 ? "Thất bại" : "Thành công"}
-              >
-                <div className="card flex justify-content-center">
-                  <Toast ref={toast} />
-                  {errorMessage.length > 0 ? (
-                    <Button onClick={show} label="Thất bại" />
-                  ) : errorMessage.length === 0 ? (
-                    ""
-                  ) : !errorMessage ? (
-                    "Thành công"
-                  ) : (
-                    ""
-                  )}
-                </div>
+            <div className="flex-1 bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-4 border-2 border-dashed border-purple-200">
+              <div className="card flex justify-content-center">
+                <Toast ref={toast} />
+                {errorMessage.length > 0 && (
+                  <button
+                    onClick={show}
+                    className="w-full px-4 py-2 bg-red-500 text-white rounded-lg font-medium hover:bg-red-600 transition-colors duration-200 shadow-md hover:shadow-lg"
+                  >
+                    <i className="fa-solid fa-exclamation-triangle mr-2"></i>
+                    Xem lỗi
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -436,17 +523,40 @@ export default function Customers() {
 }
 
 // Component hiển thị thông tin chung
-const InfoCard = ({ title, value }) => (
-  <div className="flex-1 border-2 border-dotted rounded-lg p-4">
-    <p>{title}:</p>
-    <p className="text-primary font-bold pl-2">{value}</p>
-  </div>
-);
+const InfoCard = ({ title, value, icon, color = "blue" }) => {
+  const colorClasses = {
+    blue: "from-blue-50 to-blue-100 border-blue-200 text-blue-700",
+    indigo: "from-indigo-50 to-indigo-100 border-indigo-200 text-indigo-700",
+    green: "from-green-50 to-green-100 border-green-200 text-green-700",
+    yellow: "from-yellow-50 to-yellow-100 border-yellow-200 text-yellow-700",
+    gray: "from-gray-50 to-gray-100 border-gray-200 text-gray-700",
+  };
 
-// Component hiển thị hàng có icon
-const InfoRow = ({ title, iconClass, onClick }) => (
-  <div className="flex flex-row items-center justify-between">
-    <p>{title}:</p>
-    <span className={iconClass} onClick={onClick} />
-  </div>
-);
+  const iconColors = {
+    blue: "text-blue-600",
+    indigo: "text-indigo-600",
+    green: "text-green-600",
+    yellow: "text-yellow-600",
+    gray: "text-gray-600",
+  };
+
+  return (
+    <div className={`
+      flex-1 bg-gradient-to-br ${colorClasses[color]} rounded-xl p-4
+      border-2 border-dashed hover:border-solid transition-all duration-300
+      hover:shadow-lg transform hover:scale-[1.02]
+    `}>
+      <div className="flex items-center gap-3 mb-2">
+        {icon && (
+          <div className={`w-8 h-8 rounded-lg bg-white/60 flex items-center justify-center ${iconColors[color]}`}>
+            <i className={`${icon} text-sm`}></i>
+          </div>
+        )}
+        <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">{title}</p>
+      </div>
+      <p className={`text-2xl font-bold ${colorClasses[color].split(' ')[2]}`}>
+        {value || 0}
+      </p>
+    </div>
+  );
+};
