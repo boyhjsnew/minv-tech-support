@@ -277,9 +277,6 @@ export default function Customers() {
           {/* Header Card - Horizontal Layout */}
           <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-100 flex-wrap gap-2">
             <div className="flex items-center gap-3 flex-1 min-w-[250px]">
-              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-blue-100 to-indigo-100 flex items-center justify-center shadow-sm">
-                <i className="fa-solid fa-users text-blue-600"></i>
-              </div>
               <h3 className="text-sm sm:text-base font-bold text-gray-800">Đồng bộ khách hàng</h3>
               <span className={`w-2 h-2 rounded-full ${loading ? 'bg-blue-500 animate-pulse' : activeIndex >= 0 ? 'bg-green-500' : 'bg-gray-300'}`}></span>
               <span className="text-xs text-gray-500">
@@ -398,9 +395,6 @@ export default function Customers() {
           {/* Header Card - Horizontal Layout */}
           <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-100 flex-wrap gap-2">
             <div className="flex items-center gap-3 flex-1 min-w-[250px]">
-              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center shadow-sm">
-                <i className="fa-solid fa-boxes-stacked text-indigo-600"></i>
-              </div>
               <h3 className="text-sm sm:text-base font-bold text-gray-800">Đồng bộ hàng hoá</h3>
               <span className={`w-2 h-2 rounded-full ${loadingHH ? 'bg-indigo-500 animate-pulse' : activeIndex >= 0 ? 'bg-green-500' : 'bg-gray-300'}`}></span>
               <span className="text-xs text-gray-500">
