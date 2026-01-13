@@ -37,34 +37,62 @@ const GetInvoiceFiles = () => {
             jsonData.length > 0 ? Object.keys(jsonData[0]) : [];
           console.log("Các cột tìm thấy trong file Excel:", allColumns);
 
+          // Hàm tìm giá trị theo nhiều tên cột có thể (không phân biệt hoa thường)
+          const findValue = (row, possibleNames) => {
+            // Tìm chính xác trước
+            for (const name of possibleNames) {
+              if (row[name] !== undefined && row[name] !== null && row[name] !== "") {
+                return String(row[name]).trim();
+              }
+            }
+            // Nếu không tìm thấy, tìm không phân biệt hoa thường
+            const rowKeys = Object.keys(row);
+            for (const possibleName of possibleNames) {
+              const lowerPossible = possibleName.toLowerCase().trim();
+              for (const key of rowKeys) {
+                if (key.toLowerCase().trim() === lowerPossible) {
+                  const value = row[key];
+                  if (value !== undefined && value !== null && value !== "") {
+                    return String(value).trim();
+                  }
+                }
+              }
+            }
+            return "";
+          };
+
           // Tìm các cột có thể chứa seri và number
           const invoices = jsonData.map((row, index) => {
-            // Tìm seri (ký hiệu) - ưu tiên "Ký hiệu"
-            const seri =
-              row["Ký hiệu"] ||
-              row["Ky hieu"] ||
-              row["Ky_hieu"] ||
-              row["Ký hiệu *"] ||
-              row["seri"] ||
-              row["Seri"] ||
-              row["SERI"] ||
-              row["khieu"] ||
-              "";
+            // Tìm seri (ký hiệu) - tất cả các biến thể có thể
+            const seriNames = [
+              "Ký hiệu",
+              "Ký Hiệu",
+              "Ky hieu",
+              "Ky_hieu",
+              "Ký hiệu *",
+              "seri",
+              "Seri",
+              "SERI",
+              "khieu",
+            ];
+            const seri = findValue(row, seriNames);
 
-            // Tìm number (số hóa đơn) - thêm "Số hoá đơn" (với dấu á)
-            const number =
-              row["Số hóa đơn"] ||
-              row["Số hoá đơn"] || // Thêm biến thể với dấu á
-              row["So hoa don"] ||
-              row["So_hoa_don"] ||
-              row["Số đơn hàng *"] ||
-              row["Số BL"] ||
-              row["SoBL"] ||
-              row["sdhang"] ||
-              row["number"] ||
-              row["Number"] ||
-              row["NUMBER"] ||
-              "";
+            // Tìm number (số hóa đơn) - tất cả các biến thể có thể
+            const numberNames = [
+              "Số hóa đơn",
+              "Số hoá đơn",
+              "Số Hoá Đơn",
+              "So hoa don",
+              "So_hoa_don",
+              "Số đơn hàng *",
+              "Số BL",
+              "SoBL",
+              "sdhang",
+              "number",
+              "Number",
+              "NUMBER",
+            ];
+            const number = findValue(row, numberNames);
 
             return {
               index: index + 1,
