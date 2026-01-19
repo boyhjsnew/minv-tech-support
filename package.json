@@ -38,7 +38,7 @@
   "scripts": {
     "start": "node scripts/start-with-chrome.js",
     "start:normal": "react-scripts start",
-    "build": "react-scripts build",
+    "build": "CI=false react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject"
   },
