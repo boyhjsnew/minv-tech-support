@@ -1,5 +1,3 @@
-import React from "react";
-
 async function GetListCKS(taxCode, token) {
   let sanitizedTaxCode = taxCode.replace(/-/g, "");
   const url = `https://${sanitizedTaxCode}.minvoice.com.vn/api/System/GetDataByWindowNo?window_id=WIN00010&start=0&count=100&continue=null&filter=null&infoparam=null&tlbparam=null`;
