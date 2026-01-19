@@ -123,32 +123,6 @@ const Support = () => {
   };
 
   // Helper function để retry API call (đặt ngoài để tránh linter warning)
-  const fetchWithRetry = async (apiUrl, apiHeaders, maxRetries = 3, method = "GET", body = null) => {
-    for (let retryCount = 0; retryCount < maxRetries; retryCount++) {
-      try {
-        const config = {
-          headers: apiHeaders,
-        };
-
-        if (method === "POST" && body) {
-          const response = await axios.post(apiUrl, body, config);
-          return response;
-        } else {
-          const response = await axios.get(apiUrl, config);
-          return response;
-        }
-      } catch (error) {
-        if (retryCount >= maxRetries - 1) {
-          throw error; // Throw để bên ngoài xử lý
-        }
-
-        // Đợi một chút trước khi retry (exponential backoff)
-        await new Promise((resolve) => setTimeout(resolve, 1000 * (retryCount + 1)));
-      }
-    }
-    return null;
-  };
-
   // Hàm lấy danh sách ký hiệu từ API
   const handleGetSeries = async (isAutoCall = false) => {
     if (!taxCode.trim()) {
@@ -175,7 +149,7 @@ const Support = () => {
     };
 
     try {
-      const response = await fetchWithRetry(url, headers);
+      const response = await axios.get(url, { headers });
 
       if (response?.data && response.data.code === "00" && response.data.data) {
         setSeriesList(response.data.data);
@@ -199,7 +173,10 @@ const Support = () => {
         );
       }
     } catch (error) {
-      console.error("Error fetching series:", error);
+      console.error("Error fetching series:", error.message);
+      if (error.response) {
+        console.error("Response error:", error.response.data);
+      }
       toast.error(
         <ToastNotify
           status={1}
@@ -293,7 +270,7 @@ const Support = () => {
         
         try {
           // Bước 1: Lấy thông tin hóa đơn
-          const response = await fetchWithRetry(url, getInvoiceHeaders, 3, "GET");
+          const response = await axios.get(url, { headers: getInvoiceHeaders });
           
           if (response?.data && response.data.code === "00" && response.data.data) {
             const invoice = response.data.data;
