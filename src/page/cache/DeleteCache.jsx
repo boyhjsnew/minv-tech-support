@@ -1535,12 +1535,14 @@ export default function DeleteCache() {
           const currentSent = processedCount;
           const totalToProcess = hoadon68IdList.length;
           const percentage = Math.round((currentSent / totalToProcess) * 100);
+          const currentSuccessCount = successCount;
+          const currentFailedCount = failedCount;
           setProgressById((prev) => ({
             ...prev,
             currentSent: currentSent,
             percentage: percentage,
-            successCount: successCount,
-            failedCount: failedCount,
+            successCount: currentSuccessCount,
+            failedCount: currentFailedCount,
             status: `Đã gửi batch ${batchNumber}: ${validBatch.length} hóa đơn`,
           }));
 
@@ -1557,6 +1559,7 @@ export default function DeleteCache() {
 
           // Lưu tất cả ID trong batch này là lỗi
           const errorMessage = error.message || "Lỗi không xác định";
+          const batchFailedEmails = [];
           batch.forEach((item) => {
             const failedEmail = {
               email: item.email || "N/A (Lỗi batch)",
@@ -1564,6 +1567,7 @@ export default function DeleteCache() {
               hoadon68_id: item.id,
               batchNumber: batchNumber,
             };
+            batchFailedEmails.push(failedEmail);
             currentFailedEmails.push(failedEmail);
             allFailedIds.add(item.id);
             if (item.email) {
@@ -1572,13 +1576,14 @@ export default function DeleteCache() {
           });
 
           failedCount += batch.length;
+          const currentFailedCountAfterError = failedCount;
 
           // Cập nhật danh sách email lỗi
-          setFailedEmailsById((prev) => [...prev, ...currentFailedEmails]);
+          setFailedEmailsById((prev) => [...prev, ...batchFailedEmails]);
 
           setProgressById((prev) => ({
             ...prev,
-            failedCount: failedCount,
+            failedCount: currentFailedCountAfterError,
           }));
           toast.current.show({
             severity: "error",

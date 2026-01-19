@@ -1,6 +1,5 @@
 import React, { useState, useRef } from "react";
 import { Steps } from "primereact/steps";
-import { Button } from "primereact/button";
 
 import getDMKH from "../../Utils/GetDMKH.js";
 import "../dashboard.scss";
@@ -15,7 +14,6 @@ import {
   mapProductDataAsync,
   exportToExcel as exportToExcelHH,
   uploadExcelToServer as uploadExcelToServerDMHH,
-  setUploadConfig as setUploadConfigHH,
 } from "../../Utils/MappingDMHH.js";
 import uploadExcelFile from "../../Utils/UploadExcel.js";
 
@@ -28,9 +26,6 @@ export default function Customers() {
   const [customerRaws, setCustomerRaws] = useState([]);
   const [loading, setLoading] = useState(false);
   const [loadingHH, setLoadingHH] = useState(false);
-  const [loadingUploadHH, setLoadingUploadHH] = useState(false);
-  const [countError, setCountError] = useState(0);
-  const [countSuccess, setCountSuccess] = useState(0);
   const toast = useRef(null);
 
   const show = () => {
@@ -118,10 +113,8 @@ export default function Customers() {
         
         // Tự động upload lên 2.0 (không tải file về máy)
         console.log("📤 Đang tự động upload Excel lên 2.0...");
-        setLoadingUploadHH(true);
         try {
           await uploadExcelToServerDMHH(taxCode, (result) => {
-            setLoadingUploadHH(false);
             if (result.success) {
               toast.current.show({
                 severity: "success",
@@ -139,7 +132,6 @@ export default function Customers() {
             }
           });
         } catch (error) {
-          setLoadingUploadHH(false);
           console.error("❌ Lỗi khi upload:", error);
           toast.current.show({
             severity: "error",
@@ -446,10 +438,8 @@ export default function Customers() {
                       return;
                     }
 
-                    setLoadingUploadHH(true);
                     try {
                       await exportToExcelHH(taxCode, (result) => {
-                        setLoadingUploadHH(false);
                         if (result.success) {
                           toast.current.show({
                             severity: "success",
@@ -468,7 +458,6 @@ export default function Customers() {
                         }
                       });
                     } catch (error) {
-                      setLoadingUploadHH(false);
                       toast.current.show({
                         severity: "error",
                         summary: "Lỗi",
