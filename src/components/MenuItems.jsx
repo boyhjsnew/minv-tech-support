@@ -24,7 +24,7 @@ export const MenuItems = [
     icon: "icon-sub fa-regular fa-circle",
   },
   {
-    title: "Hỗ trợ kỹ thuật",
+    title: "Cập nhật DB 2.0",
     path: "/ho-tro-ky-thuat",
     cName: "dropdown-link",
     icon: "icon-sub fa-regular fa-circle",

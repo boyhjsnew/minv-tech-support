@@ -194,7 +194,7 @@ const NavBar = () => {
                 style={{ paddingRight: "5px" }}
                 className="fa-solid fa-wrench"
               ></span>
-              <span>Hỗ trợ kỹ thuật</span>
+              <span>Cập nhật DB 2.0</span>
             </Link>
           </li>
           {/* <li
