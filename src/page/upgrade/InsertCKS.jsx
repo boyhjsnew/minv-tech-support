@@ -26,6 +26,45 @@ const InsertCKS = () => {
   const [passWord, setPassword] = useState("");
 
   const [passWord1, setPassword1] = useState("");
+
+  // Helper function to safely extract error message from various error formats
+  const getErrorMessage = (error) => {
+    if (!error) return "Lỗi không xác định";
+    
+    // If it's already a string, return it
+    if (typeof error === "string") return error;
+    
+    // If it's a .NET exception object with Message property
+    if (error.Message && typeof error.Message === "string") {
+      return error.Message;
+    }
+    
+    // If it's a standard Error object
+    if (error.message && typeof error.message === "string") {
+      return error.message;
+    }
+    
+    // If error.response?.data is a .NET exception object
+    if (error.response?.data) {
+      const data = error.response.data;
+      if (data.Message && typeof data.Message === "string") {
+        return data.Message;
+      }
+      if (data.message && typeof data.message === "string") {
+        return data.message;
+      }
+      if (typeof data === "string") {
+        return data;
+      }
+    }
+    
+    // Try to stringify if it's an object
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return "Lỗi không xác định";
+    }
+  };
   const override = {
     display: "block",
     margin: "0 auto",
@@ -228,6 +267,15 @@ const InsertCKS = () => {
         // Ở đây bạn có thể làm gì đó với danh sách CKS
       } catch (error) {
         console.error("Đã xảy ra lỗi:", error);
+        const errorMessage = getErrorMessage(error);
+        toast.error(
+          <ToastNotify 
+            status={-1} 
+            message={`Lỗi: ${errorMessage}`} 
+          />,
+          { style: styleError }
+        );
+        setLoad(false);
       }
     }
   };
@@ -272,10 +320,11 @@ const InsertCKS = () => {
       }
     } catch (error) {
       console.error("Error inserting CKS:", error);
+      const errorMessage = getErrorMessage(error);
       toast.error(
         <ToastNotify 
           status={-1} 
-          message={`Lỗi: ${error.message || "Vui lòng kiểm tra lại cookies và đảm bảo đã đăng nhập vào trang 2.0."}`} 
+          message={`Lỗi: ${errorMessage || "Vui lòng kiểm tra lại cookies và đảm bảo đã đăng nhập vào trang 2.0."}`} 
         />,
         { style: styleError }
       );

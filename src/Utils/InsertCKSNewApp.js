@@ -58,10 +58,32 @@ async function inserCKSnewAPP(cksArray, taxCode) {
         cks.serialNumber,
         error.response?.data || error.message
       );
+      
+      // Safely extract error message
+      let errorMessage = "Lỗi không xác định";
+      if (error.response?.data) {
+        const data = error.response.data;
+        if (data.Message && typeof data.Message === "string") {
+          errorMessage = data.Message;
+        } else if (data.message && typeof data.message === "string") {
+          errorMessage = data.message;
+        } else if (typeof data === "string") {
+          errorMessage = data;
+        } else {
+          try {
+            errorMessage = JSON.stringify(data);
+          } catch {
+            errorMessage = "Lỗi không xác định";
+          }
+        }
+      } else if (error.message && typeof error.message === "string") {
+        errorMessage = error.message;
+      }
+      
       results.push({
         success: false,
         serialNumber: cks.serialNumber,
-        error: error.response?.data || error.message,
+        error: errorMessage,
       });
     }
   }
