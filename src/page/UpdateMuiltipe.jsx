@@ -223,6 +223,13 @@ export default function UpdateMuiltipe() {
   const [parsing, setParsing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [logMessages, setLogMessages] = useState([]);
+  // Xuất Excel từ JSON (totalCount, items[]) -> 2 cột: Số hóa đơn (invoiceNumber), ID (id)
+  const [jsonInvoiceInput, setJsonInvoiceInput] = useState("");
+  const [jsonExportError, setJsonExportError] = useState("");
+  // Import Excel 2 cột → gen SQL UPDATE hoadon68 (hoadon68_id_dieuchinh, hoadon68_id_bidieuchinh)
+  const [generatedHoadon68Sql, setGeneratedHoadon68Sql] = useState("");
+  const [hoadon68SqlError, setHoadon68SqlError] = useState("");
+  const [parsingHoadon68Sql, setParsingHoadon68Sql] = useState(false);
 
   const resetState = () => {
     setRecords([]);
@@ -384,6 +391,113 @@ export default function UpdateMuiltipe() {
     XLSX.writeFile(workbook, "Mau-Cap-Nhat-Hoa-Don.xlsx");
   };
 
+  // Xuất Excel từ JSON: { totalCount, items: [{ invoiceNumber, id, ... }] } -> 2 cột: Số hóa đơn, ID
+  const handleExportJsonToExcel = () => {
+    setJsonExportError("");
+    const raw = jsonInvoiceInput.trim();
+    if (!raw) {
+      setJsonExportError("Vui lòng dán nội dung JSON vào ô bên trên.");
+      return;
+    }
+    try {
+      const data = JSON.parse(raw);
+      const items = data?.items;
+      if (!Array.isArray(items) || items.length === 0) {
+        setJsonExportError("JSON phải có mảng 'items' và không rỗng.");
+        return;
+      }
+      const rows = items.map((item) => ({
+        "Số hóa đơn": item.invoiceNumber ?? "",
+        ID: item.id ?? "",
+      }));
+      const worksheet = XLSX.utils.json_to_sheet(rows);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "HoaDon");
+      const fileName = `So_hoa_don_va_ID_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      XLSX.writeFile(workbook, fileName);
+    } catch (e) {
+      setJsonExportError(
+        e instanceof SyntaxError
+          ? "JSON không hợp lệ. Kiểm tra dấu phẩy, ngoặc."
+          : e?.message || "Có lỗi khi xử lý JSON."
+      );
+    }
+  };
+
+  // Escape single quote trong giá trị SQL
+  const escapeSqlValue = (v) => {
+    if (v === null || v === undefined) return "";
+    return String(v).replace(/'/g, "''");
+  };
+
+  // Import Excel 2 cột (hoadon68_id_dieuchinh, hoadon68_id_bidieuchinh) → gen SQL UPDATE hoadon68
+  const handleHoadon68ExcelChange = (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    setHoadon68SqlError("");
+    setGeneratedHoadon68Sql("");
+    if (!file) return;
+    setParsingHoadon68Sql(true);
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: "array" });
+        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(worksheet, { raw: true, defval: "" });
+        if (!rows || rows.length === 0) {
+          setHoadon68SqlError("File Excel không có dữ liệu.");
+          setParsingHoadon68Sql(false);
+          return;
+        }
+        const keys = Object.keys(rows[0] || {});
+        const keyDieuchinh =
+          keys.find((k) => /dieuchinh/i.test(k) && !/bidieuchinh/i.test(k)) ||
+          keys[0];
+        const keyBidieuchinh =
+          keys.find((k) => /bidieuchinh/i.test(k)) || keys[1];
+        if (!keyDieuchinh || !keyBidieuchinh) {
+          setHoadon68SqlError(
+            "Cần ít nhất 2 cột: hoadon68_id_dieuchinh, hoadon68_id_bidieuchinh."
+          );
+          setParsingHoadon68Sql(false);
+          return;
+        }
+        const statements = [];
+        rows.forEach((row) => {
+          const idDieuchinh = escapeSqlValue(row[keyDieuchinh]);
+          const idBidieuchinh = escapeSqlValue(row[keyBidieuchinh]);
+          if (!idDieuchinh || !idBidieuchinh) {
+            return;
+          }
+          // Hóa đơn điều chỉnh
+          statements.push(
+            `UPDATE hoadon68 SET tthdon=2,is_tthdon=2,is_mau04=0,hdlket_id='${idBidieuchinh}' WHERE hoadon68_id='${idDieuchinh}';`
+          );
+          // Hóa đơn bị điều chỉnh
+          statements.push(
+            `UPDATE hoadon68 SET tthdon=7,is_tthdon=7,is_mau04=0,hdlket_id='${idDieuchinh}' WHERE hoadon68_id='${idBidieuchinh}';`
+          );
+        });
+        setGeneratedHoadon68Sql(statements.join("\n"));
+      } catch (err) {
+        setHoadon68SqlError(err?.message || "Không thể đọc file Excel.");
+      } finally {
+        setParsingHoadon68Sql(false);
+      }
+    };
+    reader.onerror = () => {
+      setHoadon68SqlError("Không thể mở file.");
+      setParsingHoadon68Sql(false);
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  const handleCopyHoadon68Sql = () => {
+    if (!generatedHoadon68Sql) return;
+    navigator.clipboard.writeText(generatedHoadon68Sql);
+  };
+
   return (
     <div style={{ padding: "2rem" }}>
       <div style={{ marginBottom: "1.5rem" }}>
@@ -396,6 +510,141 @@ export default function UpdateMuiltipe() {
           dung phí, số tiền...). Hệ thống sẽ đọc dữ liệu, hiển thị bản xem trước
           và gửi toàn bộ sang API `InvoiceApi78/Save`.
         </p> */}
+      </div>
+
+      {/* Xuất Excel từ JSON: 2 cột Số hóa đơn (invoiceNumber), ID (id) */}
+      <div
+        style={{
+          padding: "1rem",
+          background: "#f8fafc",
+          borderRadius: 8,
+          boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+          marginBottom: "1.5rem",
+        }}
+      >
+        <h3 style={{ marginBottom: "0.5rem", fontSize: "1rem" }}>
+          Xuất Excel từ JSON (Số hóa đơn + ID)
+        </h3>
+        <p style={{ marginBottom: "0.5rem", fontSize: 13, color: "#64748b" }}>
+          Dán JSON có cấu trúc <code>{`{ totalCount, items: [{ invoiceNumber, id, ... }] }`}</code> để xuất file Excel 2 cột: <strong>Số hóa đơn</strong>, <strong>ID</strong>.
+        </p>
+        <textarea
+          value={jsonInvoiceInput}
+          onChange={(e) => {
+            setJsonInvoiceInput(e.target.value);
+            setJsonExportError("");
+          }}
+          placeholder='{"totalCount": 90, "items": [{ "invoiceNumber": 20, "id": "3a1f9c37-..." }, ...]}'
+          style={{
+            width: "100%",
+            minHeight: 120,
+            padding: "0.5rem",
+            fontSize: 12,
+            fontFamily: "monospace",
+            border: "1px solid #e2e8f0",
+            borderRadius: 4,
+            resize: "vertical",
+          }}
+        />
+        <div style={{ marginTop: "0.5rem", display: "flex", alignItems: "center", gap: "0.75rem" }}>
+          <button
+            type="button"
+            onClick={handleExportJsonToExcel}
+            style={{
+              padding: "0.45rem 1rem",
+              borderRadius: 4,
+              border: "none",
+              background: "#0ea5e9",
+              color: "#fff",
+              cursor: "pointer",
+            }}
+          >
+            Xuất Excel (Số hóa đơn + ID)
+          </button>
+          {jsonExportError && (
+            <span style={{ color: "#dc2626", fontSize: 13 }}>{jsonExportError}</span>
+          )}
+        </div>
+      </div>
+
+      {/* Import Excel 2 cột → Gen SQL UPDATE hoadon68 */}
+      <div
+        style={{
+          padding: "1rem",
+          background: "#f0fdf4",
+          borderRadius: 8,
+          boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+          marginBottom: "1.5rem",
+        }}
+      >
+        <h3 style={{ marginBottom: "0.5rem", fontSize: "1rem" }}>
+          Import Excel → Gen SQL UPDATE hoadon68
+        </h3>
+        <p style={{ marginBottom: "0.5rem", fontSize: 13, color: "#64748b" }}>
+          File Excel 2 cột: <strong>hoadon68_id_dieuchinh</strong> (WHERE), <strong>hoadon68_id_bidieuchinh</strong> (SET hdlket_id). Sau khi import sẽ sinh câu lệnh SQL để copy.
+        </p>
+        <div style={{ marginBottom: "0.5rem" }}>
+          <label
+            htmlFor="hoadon68-sql-upload"
+            style={{
+              display: "inline-block",
+              padding: "0.45rem 1rem",
+              borderRadius: 4,
+              border: "1px solid #22c55e",
+              background: "#22c55e",
+              color: "#fff",
+              cursor: parsingHoadon68Sql ? "not-allowed" : "pointer",
+            }}
+          >
+            {parsingHoadon68Sql ? "Đang đọc..." : "Chọn file Excel (2 cột)"}
+          </label>
+          <input
+            id="hoadon68-sql-upload"
+            type="file"
+            accept=".xlsx,.xls"
+            style={{ display: "none" }}
+            onChange={handleHoadon68ExcelChange}
+            disabled={parsingHoadon68Sql}
+          />
+          {generatedHoadon68Sql && (
+            <button
+              type="button"
+              onClick={handleCopyHoadon68Sql}
+              style={{
+                marginLeft: "0.5rem",
+                padding: "0.45rem 1rem",
+                borderRadius: 4,
+                border: "1px solid #16a34a",
+                background: "#fff",
+                color: "#16a34a",
+                cursor: "pointer",
+              }}
+            >
+              Copy SQL
+            </button>
+          )}
+        </div>
+        {hoadon68SqlError && (
+          <div style={{ color: "#dc2626", fontSize: 13, marginBottom: "0.5rem" }}>
+            {hoadon68SqlError}
+          </div>
+        )}
+        {generatedHoadon68Sql && (
+          <textarea
+            readOnly
+            value={generatedHoadon68Sql}
+            style={{
+              width: "100%",
+              minHeight: 180,
+              padding: "0.5rem",
+              fontSize: 12,
+              fontFamily: "monospace",
+              border: "1px solid #e2e8f0",
+              borderRadius: 4,
+              resize: "vertical",
+            }}
+          />
+        )}
       </div>
 
       <div

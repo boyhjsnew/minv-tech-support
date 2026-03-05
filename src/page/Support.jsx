@@ -7,13 +7,16 @@ import axios from "axios";
 import GetInvoiceFiles from "./GetInvoiceFiles";
 import { useSearchParams } from "react-router-dom";
 
+// Ẩn chức năng xoá chứng từ TNCN (đặt true để hiện lại)
+const SHOW_TNCN_DELETE = false;
+
 const Support = () => {
   const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState("create-serial");
   const [khhdonList, setKhhdonList] = useState("");
   const [processing, setProcessing] = useState(false);
   const [results, setResults] = useState([]);
-  
+
   // States for "Cập nhật HĐ lỗi" tab
   const [taxCode, setTaxCode] = useState("");
   const [loadingSeries, setLoadingSeries] = useState(false);
@@ -25,6 +28,27 @@ const Support = () => {
   const [invoiceList, setInvoiceList] = useState([]);
   const [token, setToken] = useState("");
   const [showTokenTooltip, setShowTokenTooltip] = useState(false);
+
+  // States for "Cập nhật ngày HĐ hàng loạt" tab
+  const [bulkTaxCode, setBulkTaxCode] = useState("");
+  const [bulkFromNumber, setBulkFromNumber] = useState("");
+  const [bulkToNumber, setBulkToNumber] = useState("");
+  const [bulkNewDate, setBulkNewDate] = useState("");
+
+  // States for "Xoá chứng từ TNCN" tab (defaults theo curl mẫu bạn gửi)
+  const [tncnTaxCode, setTncnTaxCode] = useState("0313364566");
+  const [tncnVoucherSymbolId, setTncnVoucherSymbolId] = useState(
+    "3a1cf7e4-9de3-e97e-8b9f-ba83282dea11"
+  );
+  const [tncnBearerToken, setTncnBearerToken] = useState(
+    "eyJhbGciOiJSUzI1NiIsImtpZCI6IkRGREQyM0Y5NTM3RTQyQ0FCNUU5NDM1MDEzRTJBMzBFMzRCMjVCNEIiLCJ4NXQiOiIzOTBqLVZOLVFzcTE2VU5RRS1LakRqU3lXMHMiLCJ0eXAiOiJhdCtqd3QifQ.eyJpc3MiOiJodHRwczovL2xvY2FsaG9zdDo0NDM1My8iLCJleHAiOjE3NzI0NDc1NTksImlhdCI6MTc3MjQxODc1OSwiYXVkIjoiTWludm9pY2VBcGkiLCJzY29wZSI6Ik1pbnZvaWNlQXBpIiwianRpIjoiMzM0MzMxZjctNGQ3ZS00NDQzLWE3OTMtZDllYTI5ZTMwZWNkIiwic3ViIjoiM2ExY2Y3ZTQtOWMyYi02MTkwLWExYjUtYmQ5OWI5NDM2OTFmIiwicHJlZmVycmVkX3VzZXJuYW1lIjoiQWRtaW4iLCJlbWFpbCI6ImhpZW50dEBtaW52b2ljZS52biIsInJvbGUiOiJRdeG6o24gdHLhu4siLCJ0ZW5hbnRpZCI6IjNhMWNmN2U0LTlhZTktOGY2OS1mMjAxLTc1MzM0OGFhNDBiOCIsImdpdmVuX25hbWUiOiIwMzEzMzY0NTY2IiwicGhvbmVfbnVtYmVyX3ZlcmlmaWVkIjoiRmFsc2UiLCJlbWFpbF92ZXJpZmllZCI6IkZhbHNlIiwidW5pcXVlX25hbWUiOiJBZG1pbiIsIm9pX3Byc3QiOiJNaW52b2ljZUFwaV9BcHAiLCJjbGllbnRfaWQiOiJNaW52b2ljZUFwaV9BcHAiLCJvaV90a25faWQiOiIzYTFmYmU5MC1kNGY2LThmYzMtNGFmYS05ZDBkMTlhZTZlM2EifQ.mSHohXJLYmDk7zMCkZeStaCMftsq41LrEd53pwyJ03zWBaoXllNvfG2isX9H-TddauOIwPrH-c0BvjuIp6B9M0tFRzMiLHb1MPV5nGmbll-T5RUnczNYqN4hAUnf2Yvsue7aplUqyivqwIo4zQUNL0Ls1AsKl5_VAtznQGYT_hOCE9E8OcsJSOJJZoEF43v1pObH6M_iOxFJHsg-MeXTzd8yiNU0sEozx98w0K6kloJY9eeLBvzDRtKE9FO9myAFEMOONlVxwnumbB7L60aXNmNGS6FRyZPtzIcN9ESh_QcKlwHXjHf8l9ZsLe8bqn1C-IuHmnGowj8dJ_bOsd55uw"
+  );
+  const [tncnRequestVerificationToken, setTncnRequestVerificationToken] =
+    useState(
+      "CfDJ8EiX1iYPse5KlIhd39kSFE31NCzbrYB2_yZDifWvjJv37XkUaYHyCL_ULlLAA140b9dG0qmMgLV5CR_Fr2_PJ--q4pTJYiXRVhF-BHd8_ciZO1ofd3Jp1UIXMjx9UqU0lU3Lru7KnF3JPHFRA_08hrtSgSfk8TMLLwxDlr45DiORh-_JnQ63zsRaSNBGb_9Tjg"
+    );
+  const [tncnLoading, setTncnLoading] = useState(false);
+  const [tncnLog, setTncnLog] = useState({ totalFetched: 0, deleteSuccess: 0, deleteFail: 0 });
 
   const domain = "http://bienlai70.vpdkddtphcm.com.vn";
 
@@ -49,13 +73,18 @@ const Support = () => {
       setActiveTab("update-error");
     } else if (tab === "fill-gap") {
       setActiveTab("fill-gap");
+    } else if (tab === "bulk-update-date") {
+      setActiveTab("bulk-update-date");
+    } else if (SHOW_TNCN_DELETE && tab === "delete-tncn") {
+      setActiveTab("delete-tncn");
     }
   }, [searchParams]);
 
   // Tự động gọi API khi nhập mã số thuế (với debounce)
   useEffect(() => {
-    // Chỉ gọi khi đang ở tab "update-error" và có mã số thuế hợp lệ
-    if (activeTab !== "update-error") return;
+    // Chỉ gọi khi đang ở tab "update-error" hoặc \"Cập nhật ngày HĐ hàng loạt\" và có mã số thuế hợp lệ
+    if (activeTab !== "update-error" && activeTab !== "bulk-update-date")
+      return;
     
     const trimmedTaxCode = taxCode.trim();
     
@@ -409,6 +438,244 @@ const Support = () => {
     }
   };
 
+  const handleBulkUpdateInvoiceDates = (e) => {
+    e.preventDefault();
+
+    // Validate basic input
+    if (!bulkTaxCode.trim()) {
+      toast.error(
+        <ToastNotify status={1} message="Vui lòng nhập mã số thuế" />,
+        { style: styleError }
+      );
+      return;
+    }
+    if (!bulkFromNumber.trim() || !bulkToNumber.trim()) {
+      toast.error(
+        <ToastNotify
+          status={1}
+          message="Vui lòng nhập khoảng số hóa đơn (từ số, đến số)"
+        />,
+        { style: styleError }
+      );
+      return;
+    }
+    const fromNum = parseInt(bulkFromNumber, 10);
+    const toNum = parseInt(bulkToNumber, 10);
+    if (isNaN(fromNum) || isNaN(toNum) || fromNum > toNum) {
+      toast.error(
+        <ToastNotify
+          status={1}
+          message="Khoảng số hóa đơn không hợp lệ. Từ số phải nhỏ hơn hoặc bằng đến số."
+        />,
+        { style: styleError }
+      );
+      return;
+    }
+    if (!bulkNewDate) {
+      toast.error(
+        <ToastNotify status={1} message="Vui lòng chọn ngày hóa đơn mới" />,
+        { style: styleError }
+      );
+      return;
+    }
+
+    // Tận dụng logic get invoice theo khoảng số + ký hiệu từ tab "Cập nhật HĐ lỗi"
+    // Bước này chỉ lấy thông tin hóa đơn trước, chưa cập nhật ngày.
+    (async () => {
+      try {
+        const domainSuffix = bulkTaxCode.endsWith("-998")
+          ? ".minvoice.site"
+          : ".minvoice.app";
+        const baseUrl = `https://${bulkTaxCode}${domainSuffix}/api/InvoiceApi78/GetInfoInvoice`;
+
+        const getInvoiceHeaders = {
+          Authorization:
+            "Bearer O87316arj5+Od3Fqyy5hzdBfIuPk73eKqpAzBSvv8sY=",
+          "Content-Type": "application/json",
+        };
+
+        const previewResults = [];
+
+        for (let number = fromNum; number <= toNum; number++) {
+          const url = `${baseUrl}?number=${number}&seri=${selectedSeries}`;
+          try {
+            const response = await axios.get(url, {
+              headers: getInvoiceHeaders,
+            });
+            if (
+              response?.data &&
+              response.data.code === "00" &&
+              response.data.data
+            ) {
+              const invoice = response.data.data;
+              previewResults.push({
+                number,
+                seri: selectedSeries,
+                hoadon68_id: invoice.hoadon68_id,
+                inv_invoiceAuth_id: invoice.inv_invoiceAuth_id,
+                khieu:
+                  invoice.inv_invoiceSeries ||
+                  invoice.khieu ||
+                  selectedSeries,
+                shdon: invoice.inv_invoiceNumber || invoice.shdon || number,
+                tthai: invoice.tthai || "",
+                status: "preview",
+                updateStatus: "pending",
+              });
+            }
+          } catch (err) {
+            // Bỏ qua hóa đơn không lấy được, nhưng vẫn ghi log để debug nếu cần
+            console.error(
+              "Lỗi khi lấy thông tin hóa đơn (bulk update):",
+              bulkTaxCode,
+              selectedSeries,
+              number,
+              err
+            );
+          }
+        }
+
+        setInvoiceList(previewResults);
+
+        toast.info(
+          <ToastNotify
+            status={0}
+            message={`Đã lấy thông tin ${previewResults.length} hóa đơn trong khoảng ${fromNum} - ${toNum}. Bước cập nhật ngày sẽ dùng danh sách này.`}
+          />,
+          { style: styleSuccess }
+        );
+      } catch (error) {
+        console.error("Error fetching invoices for bulk date update:", error);
+        toast.error(
+          <ToastNotify
+            status={1}
+            message={
+              error.response?.data?.message ||
+              error.message ||
+              "Lỗi khi lấy thông tin hóa đơn để cập nhật ngày"
+            }
+          />,
+          { style: styleError }
+        );
+      }
+    })();
+  };
+
+  // Xoá chứng từ TNCN: GET danh sách id (phân trang) rồi gọi API delete-many (mỗi lần 50 id)
+  const handleDeleteTncnVouchers = async (e) => {
+    e.preventDefault();
+    const tax = tncnTaxCode.trim();
+    const symbolId = tncnVoucherSymbolId.trim();
+    const bearer = tncnBearerToken.trim();
+    const xsrf = tncnRequestVerificationToken.trim();
+
+    if (!tax || !symbolId || !bearer || !xsrf) {
+      toast.error(
+        <ToastNotify status={1} message="Vui lòng nhập đủ: Mã số thuế, Voucher Symbol ID, Bearer token, RequestVerificationToken" />,
+        { style: styleError }
+      );
+      return;
+    }
+
+    setTncnLoading(true);
+    setTncnLog({ totalFetched: 0, deleteSuccess: 0, deleteFail: 0 });
+
+    const baseUrl = `https://${tax}.mtncn.minvoice.vn`;
+    const pageSize = 300;
+    const deleteManyBatchSize = 50;
+    const headers = {
+      Accept: "application/json, text/plain, */*",
+      "Accept-Language": "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7,fr-FR;q=0.6,fr;q=0.5",
+      Authorization: bearer.startsWith("Bearer ") ? bearer : `Bearer ${bearer}`,
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+      "Content-Type": "application/json",
+      Pragma: "no-cache",
+      Referer: `${baseUrl}/chung-tu`,
+      RequestVerificationToken: xsrf,
+      "Sec-Fetch-Dest": "empty",
+      "Sec-Fetch-Mode": "cors",
+      "Sec-Fetch-Site": "same-origin",
+      "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
+      __tenant: tax,
+      Origin: baseUrl,
+    };
+
+    try {
+      const allIds = [];
+      let skipCount = 0;
+
+      // GET danh sách chứng từ đến khi hết (skipCount tăng 300 mỗi lần)
+      while (true) {
+        const res = await axios.get(`${baseUrl}/api/app/voucher`, {
+          params: { maxResultCount: pageSize, skipCount, voucherSymbolId: symbolId },
+          headers,
+        });
+        const totalCount = res?.data?.totalCount ?? 0;
+        const items = res?.data?.items ?? [];
+        items.forEach((item) => {
+          if (item.id) allIds.push(item.id);
+        });
+        setTncnLog((prev) => ({ ...prev, totalFetched: allIds.length }));
+        if (items.length === 0 || items.length < pageSize || allIds.length >= totalCount) break;
+        skipCount += pageSize;
+      }
+
+      if (allIds.length === 0) {
+        toast.info(
+          <ToastNotify status={0} message="Không có chứng từ nào để xoá." />,
+          { style: styleSuccess }
+        );
+        setTncnLoading(false);
+        return;
+      }
+
+      let deleteSuccess = 0;
+      let deleteFail = 0;
+
+      // Chia thành từng batch 50 id, gọi POST /api/app/voucher/delete-many với body là mảng id
+      for (let i = 0; i < allIds.length; i += deleteManyBatchSize) {
+        const chunk = allIds.slice(i, i + deleteManyBatchSize);
+        try {
+          await axios.post(`${baseUrl}/api/app/voucher/delete-many`, chunk, {
+            headers,
+          });
+          deleteSuccess += chunk.length;
+        } catch (err) {
+          deleteFail += chunk.length;
+          console.error(
+            "delete-many batch failed:",
+            chunk.length,
+            err?.response?.data || err.message
+          );
+        }
+        setTncnLog({ totalFetched: allIds.length, deleteSuccess, deleteFail });
+        if (i + deleteManyBatchSize < allIds.length) {
+          await new Promise((r) => setTimeout(r, 200));
+        }
+      }
+
+      toast.success(
+        <ToastNotify
+          status={0}
+          message={`Xoá chứng từ TNCN: ${deleteSuccess} thành công, ${deleteFail} thất bại (tổng ${allIds.length} bản ghi, gửi mỗi lần 50 id).`}
+        />,
+        { style: styleSuccess }
+      );
+    } catch (error) {
+      console.error("Error TNCN delete flow:", error);
+      toast.error(
+        <ToastNotify
+          status={1}
+          message={error?.response?.data?.message || error?.message || "Lỗi khi lấy danh sách hoặc xoá chứng từ TNCN"}
+        />,
+        { style: styleError }
+      );
+    } finally {
+      setTncnLoading(false);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -552,6 +819,46 @@ const Support = () => {
         >
           Lấp lủng HĐ
         </button>
+        <button
+          onClick={() => setActiveTab("bulk-update-date")}
+          style={{
+            padding: "10px 20px",
+            backgroundColor:
+              activeTab === "bulk-update-date" ? "#007bff" : "transparent",
+            color:
+              activeTab === "bulk-update-date" ? "white" : "#007bff",
+            border: "none",
+            borderBottom:
+              activeTab === "bulk-update-date"
+                ? "2px solid #007bff"
+                : "none",
+            cursor: "pointer",
+            fontWeight:
+              activeTab === "bulk-update-date" ? "bold" : "normal",
+            marginLeft: "10px",
+          }}
+        >
+          Cập nhật ngày HĐ hàng loạt
+        </button>
+        {SHOW_TNCN_DELETE && (
+          <button
+            onClick={() => setActiveTab("delete-tncn")}
+            style={{
+              padding: "10px 20px",
+              backgroundColor:
+                activeTab === "delete-tncn" ? "#007bff" : "transparent",
+              color: activeTab === "delete-tncn" ? "white" : "#007bff",
+              border: "none",
+              borderBottom:
+                activeTab === "delete-tncn" ? "2px solid #007bff" : "none",
+              cursor: "pointer",
+              fontWeight: activeTab === "delete-tncn" ? "bold" : "normal",
+              marginRight: "10px",
+            }}
+          >
+            Xoá chứng từ TNCN
+          </button>
+        )}
       </div>
 
       {/* Tab Content */}
@@ -1222,6 +1529,288 @@ const Support = () => {
                 Không tìm thấy ký hiệu nào. Vui lòng kiểm tra lại mã số thuế.
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {activeTab === "bulk-update-date" && (
+        <div style={{ padding: "20px" }}>
+          <h1 style={{ marginBottom: "20px" }}>
+            Cập nhật ngày HĐ hàng loạt
+          </h1>
+
+          <div
+            style={{
+              padding: "20px",
+              backgroundColor: "#f8f9fa",
+              borderRadius: "8px",
+              border: "1px solid #dee2e6",
+              maxWidth: "800px",
+            }}
+          >
+            <form onSubmit={handleBulkUpdateInvoiceDates}>
+              {/* Mã số thuế */}
+              <div style={{ marginBottom: "16px" }}>
+                <label
+                  style={{
+                    display: "block",
+                    marginBottom: "8px",
+                    fontWeight: "bold",
+                    fontSize: "14px",
+                  }}
+                >
+                  Mã số thuế
+                </label>
+                <input
+                  type="text"
+                  value={bulkTaxCode}
+                  onChange={(e) => {
+                    setBulkTaxCode(e.target.value);
+                    // Đồng bộ với taxCode để tái sử dụng handleGetSeries & seriesList
+                    setTaxCode(e.target.value);
+                  }}
+                  placeholder="VD: 0106026495-998"
+                  style={{
+                    width: "100%",
+                    padding: "10px",
+                    border: "1px solid #ddd",
+                    borderRadius: "4px",
+                    fontSize: "14px",
+                  }}
+                />
+              </div>
+
+              {/* Chọn ký hiệu (reuse seriesList & selectedSeries từ tab Cập nhật HĐ lỗi) */}
+              <div style={{ marginBottom: "16px" }}>
+                <label
+                  style={{
+                    display: "block",
+                    marginBottom: "8px",
+                    fontWeight: "bold",
+                    fontSize: "14px",
+                  }}
+                >
+                  Chọn ký hiệu
+                </label>
+                <select
+                  value={selectedSeries}
+                  onChange={(e) => setSelectedSeries(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "10px",
+                    border: "1px solid #ddd",
+                    borderRadius: "4px",
+                    fontSize: "14px",
+                    backgroundColor: "white",
+                    cursor: seriesList.length > 0 ? "pointer" : "not-allowed",
+                  }}
+                  disabled={seriesList.length === 0}
+                >
+                  <option value="">
+                    {seriesList.length === 0
+                      ? "-- Nhập mã số thuế để tải ký hiệu --"
+                      : "-- Chọn ký hiệu --"}
+                  </option>
+                  {seriesList.map((series) => (
+                    <option key={series.id} value={series.khhdon}>
+                      {series.khhdon} - {series.invoiceTypeName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Từ số - Đến số */}
+              <div style={{ marginBottom: "16px" }}>
+                <label
+                  style={{
+                    display: "block",
+                    marginBottom: "8px",
+                    fontWeight: "bold",
+                    fontSize: "14px",
+                  }}
+                >
+                  Khoảng số hóa đơn
+                </label>
+                <div style={{ display: "flex", gap: "10px" }}>
+                  <input
+                    type="number"
+                    value={bulkFromNumber}
+                    onChange={(e) => setBulkFromNumber(e.target.value)}
+                    placeholder="Từ số"
+                    style={{
+                      flex: 1,
+                      padding: "10px",
+                      border: "1px solid #ddd",
+                      borderRadius: "4px",
+                      fontSize: "14px",
+                    }}
+                  />
+                  <input
+                    type="number"
+                    value={bulkToNumber}
+                    onChange={(e) => setBulkToNumber(e.target.value)}
+                    placeholder="Đến số"
+                    style={{
+                      flex: 1,
+                      padding: "10px",
+                      border: "1px solid #ddd",
+                      borderRadius: "4px",
+                      fontSize: "14px",
+                    }}
+                  />
+                </div>
+                <div
+                  style={{
+                    marginTop: "6px",
+                    fontSize: "12px",
+                    color: "#666",
+                  }}
+                >
+                  Nhập khoảng số hóa đơn cần cập nhật (ví dụ: từ 1 đến 50).
+                </div>
+              </div>
+
+              {/* Ngày hóa đơn mới */}
+              <div style={{ marginBottom: "16px" }}>
+                <label
+                  style={{
+                    display: "block",
+                    marginBottom: "8px",
+                    fontWeight: "bold",
+                    fontSize: "14px",
+                  }}
+                >
+                  Ngày hóa đơn mới
+                </label>
+                <input
+                  type="date"
+                  value={bulkNewDate}
+                  onChange={(e) => setBulkNewDate(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "10px",
+                    border: "1px solid #ddd",
+                    borderRadius: "4px",
+                    fontSize: "14px",
+                  }}
+                />
+                <div
+                  style={{
+                    marginTop: "6px",
+                    fontSize: "12px",
+                    color: "#666",
+                  }}
+                >
+                  Ngày này sẽ được áp dụng cho tất cả hóa đơn trong khoảng số ở trên.
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                style={{
+                  padding: "10px 20px",
+                  backgroundColor: "#28a745",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "4px",
+                  fontSize: "14px",
+                  cursor: "pointer",
+                  fontWeight: "bold",
+                }}
+              >
+                Thực hiện cập nhật (demo giao diện)
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {SHOW_TNCN_DELETE && activeTab === "delete-tncn" && (
+        <div style={{ padding: "20px" }}>
+          <h1 style={{ marginBottom: "20px" }}>Xoá chứng từ TNCN</h1>
+          <div
+            style={{
+              padding: "20px",
+              backgroundColor: "#f8f9fa",
+              borderRadius: "8px",
+              border: "1px solid #dee2e6",
+              maxWidth: "700px",
+            }}
+          >
+            <p style={{ marginBottom: "16px", color: "#666", fontSize: "14px" }}>
+              Lấy danh sách chứng từ theo voucherSymbolId (phân trang 300), sau đó xoá từng chứng từ bằng API DELETE. Cần Bearer token và RequestVerificationToken (XSRF) từ phiên đăng nhập TNCN.
+            </p>
+            <form onSubmit={handleDeleteTncnVouchers}>
+              <div style={{ marginBottom: "12px" }}>
+                <label style={{ display: "block", marginBottom: "4px", fontWeight: "bold", fontSize: "14px" }}>
+                  Mã số thuế
+                </label>
+                <input
+                  type="text"
+                  value={tncnTaxCode}
+                  onChange={(e) => setTncnTaxCode(e.target.value)}
+                  placeholder="VD: 0313364566"
+                  style={{ width: "100%", padding: "8px", border: "1px solid #ddd", borderRadius: "4px", fontSize: "14px" }}
+                />
+              </div>
+              <div style={{ marginBottom: "12px" }}>
+                <label style={{ display: "block", marginBottom: "4px", fontWeight: "bold", fontSize: "14px" }}>
+                  Voucher Symbol ID
+                </label>
+                <input
+                  type="text"
+                  value={tncnVoucherSymbolId}
+                  onChange={(e) => setTncnVoucherSymbolId(e.target.value)}
+                  placeholder="VD: 3a1cf7e4-9de3-e97e-8b9f-ba83282dea11"
+                  style={{ width: "100%", padding: "8px", border: "1px solid #ddd", borderRadius: "4px", fontSize: "14px" }}
+                />
+              </div>
+              <div style={{ marginBottom: "12px" }}>
+                <label style={{ display: "block", marginBottom: "4px", fontWeight: "bold", fontSize: "14px" }}>
+                  Bearer token (Authorization)
+                </label>
+                <input
+                  type="password"
+                  value={tncnBearerToken}
+                  onChange={(e) => setTncnBearerToken(e.target.value)}
+                  placeholder="Bearer eyJhbGci..."
+                  style={{ width: "100%", padding: "8px", border: "1px solid #ddd", borderRadius: "4px", fontSize: "14px" }}
+                />
+              </div>
+              <div style={{ marginBottom: "16px" }}>
+                <label style={{ display: "block", marginBottom: "4px", fontWeight: "bold", fontSize: "14px" }}>
+                  RequestVerificationToken (XSRF)
+                </label>
+                <input
+                  type="text"
+                  value={tncnRequestVerificationToken}
+                  onChange={(e) => setTncnRequestVerificationToken(e.target.value)}
+                  placeholder="CfDJ8EiX1iYPse5KlIhd..."
+                  style={{ width: "100%", padding: "8px", border: "1px solid #ddd", borderRadius: "4px", fontSize: "14px" }}
+                />
+              </div>
+              {tncnLog.totalFetched > 0 && (
+                <div style={{ marginBottom: "12px", fontSize: "13px", color: "#333" }}>
+                  Đã lấy: {tncnLog.totalFetched} chứng từ — Xoá thành công: {tncnLog.deleteSuccess}, thất bại: {tncnLog.deleteFail}
+                </div>
+              )}
+              <button
+                type="submit"
+                disabled={tncnLoading}
+                style={{
+                  padding: "10px 20px",
+                  backgroundColor: tncnLoading ? "#ccc" : "#dc3545",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "4px",
+                  fontSize: "14px",
+                  cursor: tncnLoading ? "not-allowed" : "pointer",
+                  fontWeight: "bold",
+                }}
+              >
+                {tncnLoading ? "Đang xử lý (lấy danh sách + xoá từng bản ghi)..." : "Lấy danh sách và xoá tất cả chứng từ TNCN"}
+              </button>
+            </form>
           </div>
         </div>
       )}

@@ -89,17 +89,22 @@ export default function Declaration() {
 
       const baseUrl = "https://apiadminmtvan.minvoice.net/transion/declaration";
 
-      // Authorization theo từng phiên bản
-      // MTVAN 1.0: X-Authorization-Token: minvoice01 | MTVAN 2.0: X-Authorization-Token: minvoice02
-      // Cùng endpoint: .../transion/declaration?dateFrom=...&dateTo=...&mltdiep=&mst=&thop=&mtdiep=&mngui=&ttxncqt=&type=&mtdtchieu=&mnnhan=&ltbao=&skip=0&take=50
+      // Authorization theo từng phiên bản (curl 1.0: X-Authorization-Token: minvoice01; 2.0: minvoice02)
       const authToken =
         mtvanVersion === "2" ? "minvoice02" : "minvoice01";
 
-      // Headers theo curl MTVAN 1.0/2.0 (server có thể kiểm tra Origin + Referer để author)
       const apiHeaders = {
         Accept: "application/json, text/plain, */*",
-        Origin: "http://adminmtvan.mininvoice.net",
-        Referer: "http://adminmtvan.mininvoice.net/",
+        "Accept-Language":
+          "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7,fr-FR;q=0.6,fr;q=0.5",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+        Origin: "http://adminmtvan.minvoice.net",
+        Pragma: "no-cache",
+        Referer: "http://adminmtvan.minvoice.net/",
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "cross-site",
         "User-Agent":
           "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
         "X-Authorization-Token": authToken,
@@ -108,7 +113,6 @@ export default function Declaration() {
         "sec-ch-ua-mobile": "?0",
         "sec-ch-ua-platform": '"macOS"',
       };
-
 
       const staticParams = {
         mltdiep: "",

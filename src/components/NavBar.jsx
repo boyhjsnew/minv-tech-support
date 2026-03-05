@@ -197,6 +197,20 @@ const NavBar = () => {
               <span>Cập nhật DB 2.0</span>
             </Link>
           </li>
+          <li role="none" style={{ alignItems: "center" }}>
+            <a
+              className="link"
+              href="https://user-tra-cuu.vercel.app/customers"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <span
+                style={{ paddingRight: "5px" }}
+                className="fa-solid fa-list-check"
+              ></span>
+              <span>Xử lý sai sót hàng loạt</span>
+            </a>
+          </li>
           {/* <li
             role="none"
             style={{ alignItems: "center" }}
