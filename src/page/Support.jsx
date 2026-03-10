@@ -784,7 +784,7 @@ const Support = () => {
             marginRight: "10px",
           }}
         >
-          Lấy PDF và XML
+          Cập nhật chứng từ TNCN
         </button>
         <button
           onClick={() => setActiveTab("update-error")}

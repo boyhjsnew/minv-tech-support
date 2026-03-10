@@ -13,6 +13,11 @@ import ToastNotify from "../../components/ToastNotify";
 
 import { MoonLoader } from "react-spinners";
 import inserCKSnewAPP from "../../Utils/InsertCKSNewApp";
+import {
+  mapDeclaration1To2,
+  getTokenListFromNewApp,
+  addDeclarationToNewApp,
+} from "../../Utils/AddDeclarationToNewApp";
 import { useDispatch, useSelector } from "react-redux";
 import { setTaxCode } from "../../store/taxCodeSlice";
 
@@ -26,6 +31,7 @@ const InsertCKS = () => {
   const [passWord, setPassword] = useState("");
 
   const [passWord1, setPassword1] = useState("");
+  const [token1App, setToken1App] = useState("");
 
   // Helper function to safely extract error message from various error formats
   const getErrorMessage = (error) => {
@@ -144,6 +150,7 @@ const InsertCKS = () => {
           throw new Error("Không thể đăng nhập 1.0 nhe !");
         }
         const tokenLogin = tokenOldApp.token;
+        setToken1App(tokenLogin);
         //Bước 4 Login 2.0 lấy token
         const tokenNewapp = await ResetPasswordNewApp(taxCode, tokenCrm);
         if (!tokenNewapp) {
@@ -279,6 +286,133 @@ const InsertCKS = () => {
       }
     }
   };
+  // Chạy ngầm: sau khi thêm CKS xong thì tự động gọi API 1.0
+  // để lấy tờ khai mới nhất (CM0006_70) và chi tiết tờ khai.
+  const fetchLatestDeclarationFromOldApp = async (currentTaxCode, token) => {
+    try {
+      if (!currentTaxCode || !token) return;
+
+      const sanitizedTaxCode = currentTaxCode.replace(/-/g, "");
+      const baseUrl = `https://${sanitizedTaxCode}.minvoice.com.vn`;
+      const authHeader = `Bear ${token};VP;vi`;
+
+      // Bước 1: Lấy danh sách tờ khai (CM0006_70)
+      const listResponse = await fetch(`${baseUrl}/api/Pattern/GetData`, {
+        method: "POST",
+        headers: {
+          Accept: "*/*",
+          "Accept-Language":
+            "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7,fr-FR;q=0.6,fr;q=0.5",
+          Authorization: authHeader,
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+          "Content-Type": "application/json",
+          Origin: baseUrl,
+          Pragma: "no-cache",
+          Referer: `${baseUrl}/`,
+          "User-Agent":
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
+        },
+        body: JSON.stringify({
+          command: "CM0006_70",
+          start: 0,
+          count: 50,
+          filter: [],
+          tlbparam: [],
+        }),
+      });
+
+      if (!listResponse.ok) {
+        console.error(
+          "Lỗi khi lấy danh sách tờ khai:",
+          listResponse.status,
+          listResponse.statusText
+        );
+        return;
+      }
+
+      const listJson = await listResponse.json();
+      const declarations = Array.isArray(listJson?.data) ? listJson.data : [];
+      if (!declarations.length) {
+        console.log("Không tìm thấy tờ khai nào để xử lý.");
+        return;
+      }
+
+      // Chọn tờ khai có ngày lập (nlap) gần nhất
+      const latestDeclaration = declarations.reduce((latest, current) => {
+        if (!latest) return current;
+        const currentDate = new Date(current.nlap);
+        const latestDate = new Date(latest.nlap);
+        return currentDate > latestDate ? current : latest;
+      }, null);
+
+      if (!latestDeclaration?.id) {
+        console.log("Không tìm được ID tờ khai phù hợp.");
+        return;
+      }
+
+      // Bước 2: Lấy chi tiết tờ khai theo ID
+      const detailResponse = await fetch(
+        `${baseUrl}/api/Register70/GetRegisterInvoice?id=${encodeURIComponent(
+          latestDeclaration.id
+        )}`,
+        {
+          method: "GET",
+          headers: {
+            Accept: "*/*",
+            "Accept-Language":
+              "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7,fr-FR;q=0.6,fr;q=0.5",
+            Authorization: authHeader,
+            "Cache-Control": "no-cache",
+            Connection: "keep-alive",
+            "Content-Type": "application/json",
+            Origin: baseUrl,
+            Pragma: "no-cache",
+            Referer: `${baseUrl}/`,
+            "User-Agent":
+              "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
+          },
+        }
+      );
+
+      if (!detailResponse.ok) {
+        console.error(
+          "Lỗi khi lấy chi tiết tờ khai:",
+          detailResponse.status,
+          detailResponse.statusText
+        );
+        return;
+      }
+
+      const detailJson = await detailResponse.json();
+      console.log("Tờ khai mới nhất (summary):", latestDeclaration);
+      console.log("Chi tiết tờ khai mới nhất (detail):", detailJson);
+
+      // Dữ liệu để map sang 2.0: ưu tiên chi tiết, fallback list item
+      const declaration1 = detailJson?.mst != null ? detailJson : latestDeclaration;
+      const payload2 = mapDeclaration1To2(declaration1);
+      if (!payload2) {
+        console.warn("Bỏ qua add tờ khai 2.0: không map được payload.");
+        return;
+      }
+
+      // Tận dụng cookie 2.0: lấy danh sách token (CKS) đã có trên 2.0
+      const tokens2 = await getTokenListFromNewApp(currentTaxCode);
+      payload2.token = Array.isArray(tokens2) ? tokens2 : [];
+
+      const addResult = await addDeclarationToNewApp(currentTaxCode, payload2);
+      if (addResult.success) {
+        console.log("Đã add tờ khai lên 2.0 thành công:", addResult.data);
+      } else {
+        console.warn("Add tờ khai 2.0 thất bại:", addResult.error);
+      }
+    } catch (error) {
+      console.error(
+        "Lỗi khi tự động lấy tờ khai sau khi thêm CKS:",
+        error?.response?.data || error.message || error
+      );
+    }
+  };
   const handleInsertCKS = async () => {
     if (!stillValid || stillValid.length === 0) {
       toast.warning(
@@ -309,6 +443,23 @@ const InsertCKS = () => {
           />,
           { style: styleSuccess }
         );
+
+        // Sau khi thêm CKS thành công, chạy ngầm 2 API 1.0 để lấy tờ khai mới nhất
+        if (token1App) {
+          // Không await để tránh chặn UI; chỉ log lỗi nếu có
+          fetchLatestDeclarationFromOldApp(taxCode, token1App).catch(
+            (error) => {
+              console.error(
+                "Lỗi khi chạy ngầm lấy tờ khai sau khi thêm CKS:",
+                error
+              );
+            }
+          );
+        } else {
+          console.warn(
+            "Không có token đăng nhập 1.0, bỏ qua bước tự động lấy tờ khai."
+          );
+        }
       } else {
         toast.error(
           <ToastNotify
