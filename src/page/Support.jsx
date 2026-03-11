@@ -10,6 +10,74 @@ import { useSearchParams } from "react-router-dom";
 // Ẩn chức năng xoá chứng từ TNCN (đặt true để hiện lại)
 const SHOW_TNCN_DELETE = false;
 
+// Header và auth cho API Save (Cập nhật ngày HĐ hàng loạt) - theo curl
+const SAVE_API_AUTH = "Bear O87316arj5+Od3Fqyy5hzdBfIuPk73eKqpAzBSvv8sY=";
+const SAVE_API_HEADERS = {
+  Accept: "*/*",
+  "Accept-Language": "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7,fr-FR;q=0.6,fr;q=0.5",
+  "Cache-Control": "no-cache",
+  Connection: "keep-alive",
+  "Content-Type": "application/json",
+  Origin: "https://msupport.minvoice.com.vn",
+  Pragma: "no-cache",
+  Referer: "https://msupport.minvoice.com.vn/",
+  "Sec-Fetch-Dest": "empty",
+  "Sec-Fetch-Mode": "cors",
+  "Sec-Fetch-Site": "same-site",
+  "User-Agent":
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+  "sec-ch-ua": '"Chromium";v="142", "Google Chrome";v="142", "Not_A Brand";v="99"',
+  "sec-ch-ua-mobile": "?0",
+  "sec-ch-ua-platform": '"macOS"',
+  Authorization: SAVE_API_AUTH,
+};
+
+/** Đảm bảo giá trị luôn là mảng (JsonArray). */
+function ensureJsonArray(value) {
+  if (value == null) return [];
+  if (Array.isArray(value)) return value;
+  if (typeof value === "object" && !Array.isArray(value)) return Object.values(value);
+  return [];
+}
+
+/**
+ * Cấu trúc details đúng theo API: details = [ { data: [ dòng 1, dòng 2, ... ] } ].
+ * GetInfoInvoice có thể trả về details là object { data: [...] } hoặc mảng tab [ { data: [...] } ].
+ */
+function buildDetailsForSave(invoice) {
+  const detailsRaw = invoice.details;
+  if (detailsRaw == null) return [{ data: [] }];
+
+  // Trường hợp API trả về details = { data: [ dòng 1, dòng 2, ... ] }
+  if (typeof detailsRaw === "object" && !Array.isArray(detailsRaw) && "data" in detailsRaw) {
+    const dataArray = ensureJsonArray(detailsRaw.data);
+    return [{ data: dataArray }];
+  }
+
+  // Trường hợp details là mảng tab [ { data: [...] }, ... ]
+  const detailsArray = ensureJsonArray(detailsRaw);
+  return detailsArray.map((tab) => {
+    const dataRaw = tab != null && typeof tab === "object" ? tab.data : undefined;
+    const dataArray = ensureJsonArray(dataRaw);
+    return { data: dataArray };
+  });
+}
+
+/**
+ * Map từ GetInfoInvoice sang 1 phần tử cho API Save.
+ * Cấu trúc details giống mẫu: [ { data: [ dòng 1, dòng 2, ... ] } ]. Chỉ đổi ngày.
+ */
+function mapInvoiceToSaveData(invoice, newDateYyyyMmDd) {
+  const issued = (newDateYyyyMmDd || "").trim() || invoice.inv_invoiceIssuedDate || "";
+  const details = buildDetailsForSave(invoice);
+
+  return {
+    ...invoice,
+    inv_invoiceIssuedDate: issued,
+    details,
+  };
+}
+
 const Support = () => {
   const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState("create-serial");
@@ -479,84 +547,129 @@ const Support = () => {
       return;
     }
 
-    // Tận dụng logic get invoice theo khoảng số + ký hiệu từ tab "Cập nhật HĐ lỗi"
-    // Bước này chỉ lấy thông tin hóa đơn trước, chưa cập nhật ngày.
+    setLoadingInvoices(true);
+    setInvoiceList([]);
+
     (async () => {
       try {
         const domainSuffix = bulkTaxCode.endsWith("-998")
           ? ".minvoice.site"
           : ".minvoice.app";
-        const baseUrl = `https://${bulkTaxCode}${domainSuffix}/api/InvoiceApi78/GetInfoInvoice`;
+        const baseUrl = `https://${bulkTaxCode}${domainSuffix}`;
+        const getInfoUrl = `${baseUrl}/api/InvoiceApi78/GetInfoInvoice`;
+        const saveUrl = `${baseUrl}/api/InvoiceApi78/Save`;
 
         const getInvoiceHeaders = {
-          Authorization:
-            "Bearer O87316arj5+Od3Fqyy5hzdBfIuPk73eKqpAzBSvv8sY=",
           "Content-Type": "application/json",
+          Authorization: SAVE_API_AUTH,
         };
 
-        const previewResults = [];
+        const results = [];
 
-        for (let number = fromNum; number <= toNum; number++) {
-          const url = `${baseUrl}?number=${number}&seri=${selectedSeries}`;
+        // Quy định API: sửa ngày phải xử lý từ số lớn xuống số nhỏ (trên xuống)
+        for (let number = toNum; number >= fromNum; number--) {
           try {
-            const response = await axios.get(url, {
+            const response = await axios.get(getInfoUrl, {
+              params: { number, seri: selectedSeries },
               headers: getInvoiceHeaders,
             });
+
             if (
-              response?.data &&
-              response.data.code === "00" &&
-              response.data.data
+              !response?.data ||
+              response.data.code !== "00" ||
+              !response.data.data
             ) {
-              const invoice = response.data.data;
-              previewResults.push({
+              results.push({
                 number,
                 seri: selectedSeries,
-                hoadon68_id: invoice.hoadon68_id,
-                inv_invoiceAuth_id: invoice.inv_invoiceAuth_id,
-                khieu:
-                  invoice.inv_invoiceSeries ||
-                  invoice.khieu ||
-                  selectedSeries,
-                shdon: invoice.inv_invoiceNumber || invoice.shdon || number,
-                tthai: invoice.tthai || "",
-                status: "preview",
-                updateStatus: "pending",
+                hoadon68_id: null,
+                inv_invoiceAuth_id: null,
+                khieu: selectedSeries,
+                shdon: number,
+                tthai: "",
+                status: "error",
+                updateStatus: "error",
+                updateError: response?.data?.message || "Không lấy được thông tin HĐ",
               });
+              setInvoiceList([...results]);
+              continue;
             }
-          } catch (err) {
-            // Bỏ qua hóa đơn không lấy được, nhưng vẫn ghi log để debug nếu cần
-            console.error(
-              "Lỗi khi lấy thông tin hóa đơn (bulk update):",
-              bulkTaxCode,
-              selectedSeries,
+
+            const invoice = response.data.data;
+            const newDateStr = bulkNewDate.trim();
+            const saveDataItem = mapInvoiceToSaveData(invoice, newDateStr);
+
+            const savePayload = {
+              editmode: invoice.editmode != null ? invoice.editmode : 2,
+              data: [saveDataItem],
+            };
+
+            await axios.post(saveUrl, savePayload, {
+              headers: SAVE_API_HEADERS,
+            });
+
+            results.push({
               number,
-              err
-            );
+              seri: selectedSeries,
+              hoadon68_id: invoice.hoadon68_id,
+              inv_invoiceAuth_id: invoice.inv_invoiceAuth_id,
+              khieu: invoice.inv_invoiceSeries || invoice.khieu || selectedSeries,
+              shdon: invoice.inv_invoiceNumber || invoice.shdon || number,
+              tthai: invoice.tthai || "",
+              status: "success",
+              updateStatus: "success",
+            });
+          } catch (err) {
+            const isGetError = !err.config?.method || err.config.method.toLowerCase() === "get";
+            const msg =
+              err?.response?.data?.message ||
+              err?.response?.data?.Message ||
+              err?.message ||
+              "Lỗi không xác định";
+            results.push({
+              number,
+              seri: selectedSeries,
+              hoadon68_id: null,
+              inv_invoiceAuth_id: null,
+              khieu: selectedSeries,
+              shdon: number,
+              tthai: "",
+              status: isGetError ? "error" : "success",
+              updateStatus: "error",
+              updateError: msg,
+            });
           }
+          setInvoiceList([...results]);
         }
 
-        setInvoiceList(previewResults);
+        // Hiển thị danh sách theo số HĐ tăng dần (từ số → đến số)
+        results.sort((a, b) => (a.number ?? 0) - (b.number ?? 0));
+        setInvoiceList([...results]);
 
+        const successCount = results.filter((r) => r.updateStatus === "success").length;
+        const failCount = results.length - successCount;
         toast.info(
           <ToastNotify
             status={0}
-            message={`Đã lấy thông tin ${previewResults.length} hóa đơn trong khoảng ${fromNum} - ${toNum}. Bước cập nhật ngày sẽ dùng danh sách này.`}
+            message={`Cập nhật ngày HĐ: ${successCount} thành công, ${failCount} thất bại (tổng ${results.length} hóa đơn).`}
           />,
           { style: styleSuccess }
         );
       } catch (error) {
-        console.error("Error fetching invoices for bulk date update:", error);
+        console.error("Error bulk update invoice dates:", error);
         toast.error(
           <ToastNotify
             status={1}
             message={
               error.response?.data?.message ||
               error.message ||
-              "Lỗi khi lấy thông tin hóa đơn để cập nhật ngày"
+              "Lỗi khi cập nhật ngày hóa đơn hàng loạt"
             }
           />,
           { style: styleError }
         );
+      } finally {
+        setLoadingInvoices(false);
       }
     })();
   };
@@ -1707,20 +1820,75 @@ const Support = () => {
 
               <button
                 type="submit"
+                disabled={loadingInvoices}
                 style={{
                   padding: "10px 20px",
-                  backgroundColor: "#28a745",
+                  backgroundColor: loadingInvoices ? "#ccc" : "#28a745",
                   color: "white",
                   border: "none",
                   borderRadius: "4px",
                   fontSize: "14px",
-                  cursor: "pointer",
+                  cursor: loadingInvoices ? "not-allowed" : "pointer",
                   fontWeight: "bold",
                 }}
               >
-                Thực hiện cập nhật (demo giao diện)
+                {loadingInvoices
+                  ? "Đang lấy và cập nhật ngày HĐ..."
+                  : "Lấy từng HĐ và cập nhật ngày (Save API)"}
               </button>
             </form>
+
+            {invoiceList.length > 0 && (
+              <div style={{ marginTop: "24px" }}>
+                <h3 style={{ marginBottom: "12px", fontSize: "16px", fontWeight: "bold" }}>
+                  Kết quả cập nhật ngày HĐ ({invoiceList.length})
+                </h3>
+                <div
+                  style={{
+                    maxHeight: "360px",
+                    overflowY: "auto",
+                    border: "1px solid #dee2e6",
+                    borderRadius: "8px",
+                    backgroundColor: "white",
+                  }}
+                >
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                    <thead>
+                      <tr style={{ backgroundColor: "#f8f9fa" }}>
+                        <th style={{ padding: "8px", textAlign: "left", borderBottom: "2px solid #dee2e6" }}>STT</th>
+                        <th style={{ padding: "8px", textAlign: "left", borderBottom: "2px solid #dee2e6" }}>Ký hiệu</th>
+                        <th style={{ padding: "8px", textAlign: "left", borderBottom: "2px solid #dee2e6" }}>Số HĐ</th>
+                        <th style={{ padding: "8px", textAlign: "left", borderBottom: "2px solid #dee2e6" }}>Cập nhật</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {invoiceList.map((inv, idx) => (
+                        <tr
+                          key={`bulk-${inv.seri}-${inv.number}-${idx}`}
+                          style={{
+                            borderBottom: "1px solid #dee2e6",
+                            backgroundColor: inv.updateStatus === "success" ? "#f0fdf4" : "#fef2f2",
+                          }}
+                        >
+                          <td style={{ padding: "8px" }}>{idx + 1}</td>
+                          <td style={{ padding: "8px" }}>{inv.khieu || inv.seri || "-"}</td>
+                          <td style={{ padding: "8px" }}>{inv.shdon ?? inv.number ?? "-"}</td>
+                          <td style={{ padding: "8px" }}>
+                            {inv.updateStatus === "success" ? (
+                              <span style={{ color: "#16a34a", fontWeight: "600" }}>Thành công</span>
+                            ) : (
+                              <span style={{ color: "#dc2626", fontSize: "12px" }} title={inv.updateError}>
+                                {inv.updateError || "Lỗi"}
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
