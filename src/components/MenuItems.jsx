@@ -30,6 +30,12 @@ export const MenuItems = [
     icon: "icon-sub fa-regular fa-circle",
   },
   {
+    title: "Kiểm tra đang gửi hàng loạt",
+    path: "/ho-tro-ky-thuat?tab=check-sending",
+    cName: "dropdown-link",
+    icon: "icon-sub fa-regular fa-circle",
+  },
+  {
     title: "Lấy PDF và XML hàng loạt",
     path: "/ho-tro-ky-thuat?tab=get-files",
     cName: "dropdown-link",

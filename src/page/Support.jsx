@@ -6,6 +6,8 @@ import { styleSuccess, styleError } from "../components/ToastNotifyStyle";
 import axios from "axios";
 import GetInvoiceFiles from "./GetInvoiceFiles";
 import { useSearchParams } from "react-router-dom";
+import GetTokenCRM from "../Utils/GetTokenCRM";
+import ResetPasswordNewApp from "../Utils/ResetPasswordNewApp";
 
 // Ẩn chức năng xoá chứng từ TNCN (đặt true để hiện lại)
 const SHOW_TNCN_DELETE = false;
@@ -118,6 +120,18 @@ const Support = () => {
   const [tncnLoading, setTncnLoading] = useState(false);
   const [tncnLog, setTncnLog] = useState({ totalFetched: 0, deleteSuccess: 0, deleteFail: 0 });
 
+  // States for "Kiểm tra đang gửi hàng loạt" tab
+  const [checkTaxCode, setCheckTaxCode] = useState("");
+  const [checkRegisterInvoiceId, setCheckRegisterInvoiceId] = useState("");
+  const [checkRegisterList, setCheckRegisterList] = useState([]);
+  const [loadingCheckRegisterList, setLoadingCheckRegisterList] = useState(false);
+  const [checkAccount20, setCheckAccount20] = useState(null);
+  const [checkInvoiceList, setCheckInvoiceList] = useState([]);
+  const [checkResults, setCheckResults] = useState([]);
+  const [loadingCheckAccount, setLoadingCheckAccount] = useState(false);
+  const [loadingCheckList, setLoadingCheckList] = useState(false);
+  const [loadingCheckBatch, setLoadingCheckBatch] = useState(false);
+
   const domain = "http://bienlai70.vpdkddtphcm.com.vn";
 
   // Các trường cố định
@@ -143,6 +157,8 @@ const Support = () => {
       setActiveTab("fill-gap");
     } else if (tab === "bulk-update-date") {
       setActiveTab("bulk-update-date");
+    } else if (tab === "check-sending") {
+      setActiveTab("check-sending");
     } else if (SHOW_TNCN_DELETE && tab === "delete-tncn") {
       setActiveTab("delete-tncn");
     }
@@ -855,6 +871,247 @@ const Support = () => {
     );
   };
 
+  // --- Kiểm tra đang gửi hàng loạt: lấy tài khoản 2.0 và mở link đăng nhập
+  const handleGetAccount20 = async () => {
+    const tax = (checkTaxCode || "").trim().replace(/-/g, "");
+    if (!tax) {
+      toast.error(<ToastNotify status={-1} message="Vui lòng nhập mã số thuế" />, { style: styleError });
+      return;
+    }
+    const storedAccountString = localStorage.getItem("account");
+    if (!storedAccountString) {
+      toast.error(<ToastNotify status={-1} message="Vui lòng đăng nhập CRM trước" />, { style: styleError });
+      return;
+    }
+    let storedAccount;
+    try {
+      storedAccount = JSON.parse(storedAccountString);
+    } catch {
+      toast.error(<ToastNotify status={-1} message="Dữ liệu đăng nhập CRM không hợp lệ" />, { style: styleError });
+      return;
+    }
+    if (!storedAccount.username || !storedAccount.password || !storedAccount.madvcs) {
+      toast.error(<ToastNotify status={-1} message="Vui lòng đăng nhập CRM đầy đủ (username, password, mã ĐVCS)" />, { style: styleError });
+      return;
+    }
+    setLoadingCheckAccount(true);
+    setCheckAccount20(null);
+    try {
+      const tokenCrmRes = await GetTokenCRM(
+        storedAccount.username,
+        storedAccount.password,
+        storedAccount.madvcs
+      );
+      if (!tokenCrmRes?.token) {
+        toast.error(<ToastNotify status={-1} message="Không lấy được token CRM" />, { style: styleError });
+        return;
+      }
+      const tokenNewApp = await ResetPasswordNewApp(tax, tokenCrmRes.token);
+      if (!tokenNewApp?.token?.data) {
+        toast.error(<ToastNotify status={-1} message="Không lấy được tài khoản 2.0 cho MST này" />, { style: styleError });
+        return;
+      }
+      const account = tokenNewApp.token.data.account;
+      const password = tokenNewApp.token.data.passWord;
+      setCheckAccount20({ account, password });
+      const newWindow = window.open(`https://${tax}.minvoice.net/#/`, "_blank");
+      // Cơ chế như InsertCKS: lắng nghe postMessage từ trang 2.0 để lưu cookie (khi user đăng nhập xong chạy script trên trang 2.0)
+      if (newWindow) {
+        const messageHandler = (event) => {
+          if (event.data?.type === "COOKIES_SAVED" && event.data?.taxCode === tax) {
+            const cookies = event.data.cookies;
+            if (cookies) {
+              try {
+                localStorage.setItem(`minv_tool_cookies_${tax}`, cookies);
+              } catch (e) {
+                console.warn("Lưu cookie thất bại:", e);
+              }
+            }
+          }
+        };
+        window.addEventListener("message", messageHandler);
+        setTimeout(() => {
+          window.removeEventListener("message", messageHandler);
+        }, 300000);
+      }
+      toast.success(
+        <ToastNotify status={0} message="Đã lấy tài khoản 2.0 và mở link đăng nhập. Đăng nhập xong quay lại, bấm Lấy danh sách ký hiệu rồi chọn tờ khai." />,
+        { style: styleSuccess }
+      );
+    } catch (err) {
+      console.error(err);
+      toast.error(<ToastNotify status={-1} message={err?.message || "Lỗi khi lấy tài khoản 2.0"} />, { style: styleError });
+    } finally {
+      setLoadingCheckAccount(false);
+    }
+  };
+
+  // --- Kiểm tra đang gửi hàng loạt: lấy danh sách ký hiệu bằng API GetTypeInvoiceSeries (cùng hàm get series)
+  const handleFetchCheckRegisterList = async () => {
+    const taxCodeInput = (checkTaxCode || "").trim();
+    if (!taxCodeInput) {
+      toast.error(<ToastNotify status={-1} message="Vui lòng nhập mã số thuế" />, { style: styleError });
+      return;
+    }
+    setLoadingCheckRegisterList(true);
+    setCheckRegisterList([]);
+    setCheckRegisterInvoiceId("");
+    const domain = taxCodeInput.endsWith("-998") ? ".minvoice.site" : ".minvoice.app";
+    const url = `https://${taxCodeInput}${domain}/api/InvoiceApi78/GetTypeInvoiceSeries`;
+    const headers = {
+      Authorization: "Bearer O87316arj5+Od3Fqyy5hzdBfIuPk73eKqpAzBSvv8sY=",
+      "Content-Type": "application/json",
+    };
+    try {
+      const response = await axios.get(url, { headers });
+      if (response?.data?.code === "00" && Array.isArray(response?.data?.data)) {
+        const data = response.data.data;
+        const list = data.map((s) => ({
+          id: s.id,
+          name: s.khhdon ? `${s.khhdon}${s.invoiceTypeName ? " - " + s.invoiceTypeName : ""}` : (s.invoiceTypeName || s.id),
+        })).filter((s) => s.id);
+        setCheckRegisterList(list);
+        if (list.length === 0) {
+          toast.warning(<ToastNotify status={1} message="Không tìm thấy ký hiệu nào" />, { style: styleError });
+        } else {
+          toast.success(<ToastNotify status={0} message={`Đã lấy ${list.length} ký hiệu`} />, { style: styleSuccess });
+        }
+      } else {
+        throw new Error(response?.data?.message || "Không thể lấy danh sách ký hiệu");
+      }
+    } catch (err) {
+      console.error(err);
+      const msg = err?.response?.data?.message || err?.message || "Lỗi khi lấy danh sách ký hiệu";
+      toast.error(<ToastNotify status={-1} message={msg} />, { style: styleError });
+    } finally {
+      setLoadingCheckRegisterList(false);
+    }
+  };
+
+  // --- Kiểm tra đang gửi hàng loạt: lấy danh sách hóa đơn trạng thái đang gửi (sendTaxStatus=3)
+  const handleFetchSendingList = async () => {
+    const tax = (checkTaxCode || "").trim().replace(/-/g, "");
+    const regId = (checkRegisterInvoiceId || "").trim();
+    if (!tax) {
+      toast.error(<ToastNotify status={-1} message="Vui lòng nhập mã số thuế" />, { style: styleError });
+      return;
+    }
+    if (!regId) {
+      toast.error(<ToastNotify status={-1} message="Vui lòng chọn ký hiệu (tờ khai đăng ký)" />, { style: styleError });
+      return;
+    }
+    setLoadingCheckList(true);
+    setCheckInvoiceList([]);
+    setCheckResults([]);
+    const baseUrl = `https://${tax}.minvoice.net`;
+    const PAGE_SIZE = 50;
+    const headers = {
+      Accept: "application/json, text/plain, */*",
+      "Accept-Language": "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7,fr-FR;q=0.6,fr;q=0.5",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+      Pragma: "no-cache",
+      Referer: `${baseUrl}/`,
+      "Sec-Fetch-Dest": "empty",
+      "Sec-Fetch-Mode": "cors",
+      "Sec-Fetch-Site": "same-origin",
+      "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
+      "sec-ch-ua": '"Not:A-Brand";v="99", "Google Chrome";v="145", "Chromium";v="145"',
+      "sec-ch-ua-mobile": "?0",
+      "sec-ch-ua-platform": '"macOS"',
+    };
+    try {
+      let allItems = [];
+      let skipCount = 0;
+      let totalCount = null;
+      do {
+        const url = `${baseUrl}/api/api/app/invoice?maxResultCount=${PAGE_SIZE}&skipCount=${skipCount}&sendTaxStatus=3&registerInvoiceId=${encodeURIComponent(regId)}&loadAll=false`;
+        const res = await axios.get(url, { headers, withCredentials: true });
+        const data = res.data;
+        const items = Array.isArray(data.items) ? data.items : [];
+        allItems = allItems.concat(items);
+        if (totalCount == null && typeof data.totalCount === "number") totalCount = data.totalCount;
+        if (items.length < PAGE_SIZE) break;
+        skipCount += PAGE_SIZE;
+        setCheckInvoiceList([...allItems]);
+      } while (totalCount == null || allItems.length < totalCount);
+      setCheckInvoiceList(allItems);
+      toast.success(
+        <ToastNotify status={0} message={`Đã lấy ${allItems.length} hóa đơn trạng thái đang gửi`} />,
+        { style: styleSuccess }
+      );
+    } catch (err) {
+      console.error(err);
+      const msg = err?.response?.data?.message || err?.message || "Lỗi khi lấy danh sách";
+      toast.error(<ToastNotify status={-1} message={msg} />, { style: styleError });
+    } finally {
+      setLoadingCheckList(false);
+    }
+  };
+
+  // --- Kiểm tra đang gửi hàng loạt: gọi m-gate-way/result cho từng hóa đơn
+  const handleBatchCheck = async () => {
+    if (!checkInvoiceList.length) {
+      toast.error(<ToastNotify status={-1} message="Hãy lấy danh sách đang gửi trước" />, { style: styleError });
+      return;
+    }
+    const tax = (checkTaxCode || "").trim().replace(/-/g, "");
+    if (!tax) {
+      toast.error(<ToastNotify status={-1} message="Vui lòng nhập mã số thuế" />, { style: styleError });
+      return;
+    }
+    setLoadingCheckBatch(true);
+    const baseUrl = `https://${tax}.minvoice.net`;
+    const headers = {
+      Accept: "application/json, text/plain, */*",
+      "Accept-Language": "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7,fr-FR;q=0.6,fr;q=0.5",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+      Pragma: "no-cache",
+      Referer: `${baseUrl}/`,
+      "Sec-Fetch-Dest": "empty",
+      "Sec-Fetch-Mode": "cors",
+      "Sec-Fetch-Site": "same-origin",
+      "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
+      "sec-ch-ua": '"Not:A-Brand";v="99", "Google Chrome";v="145", "Chromium";v="145"',
+      "sec-ch-ua-mobile": "?0",
+      "sec-ch-ua-platform": '"macOS"',
+    };
+    const results = [];
+    for (let i = 0; i < checkInvoiceList.length; i++) {
+      const inv = checkInvoiceList[i];
+      const id = inv.id;
+      if (!id) continue;
+      try {
+        const res = await axios.get(
+          `${baseUrl}/api/api/app/m-gate-way/result/${id}?type=Invoice,InvoiceCode,InvoiceCash`,
+          { headers, withCredentials: true }
+        );
+        results.push({
+          id,
+          invoiceNumber: inv.invoiceNumber,
+          invoiceSerial: inv.invoiceSerial,
+          status: "ok",
+          data: res.data,
+        });
+      } catch (err) {
+        results.push({
+          id,
+          invoiceNumber: inv.invoiceNumber,
+          invoiceSerial: inv.invoiceSerial,
+          status: "error",
+          message: err?.response?.data?.message || err?.message || "Lỗi",
+        });
+      }
+      setCheckResults([...results]);
+    }
+    setLoadingCheckBatch(false);
+    toast.success(
+      <ToastNotify status={0} message={`Đã kiểm tra ${results.length} hóa đơn`} />,
+      { style: styleSuccess }
+    );
+  };
+
   return (
     <div
       className="support-container"
@@ -952,6 +1209,23 @@ const Support = () => {
           }}
         >
           Cập nhật ngày HĐ hàng loạt
+        </button>
+        <button
+          onClick={() => setActiveTab("check-sending")}
+          style={{
+            padding: "10px 20px",
+            backgroundColor:
+              activeTab === "check-sending" ? "#007bff" : "transparent",
+            color: activeTab === "check-sending" ? "white" : "#007bff",
+            border: "none",
+            borderBottom:
+              activeTab === "check-sending" ? "2px solid #007bff" : "none",
+            cursor: "pointer",
+            fontWeight: activeTab === "check-sending" ? "bold" : "normal",
+            marginRight: "10px",
+          }}
+        >
+          Kiểm tra đang gửi hàng loạt
         </button>
         {SHOW_TNCN_DELETE && (
           <button
@@ -1125,6 +1399,174 @@ const Support = () => {
       )}
 
       {activeTab === "get-files" && <GetInvoiceFiles />}
+
+      {activeTab === "check-sending" && (
+        <div style={{ padding: "20px" }}>
+          <h1 style={{ marginBottom: "20px" }}>Kiểm tra đang gửi hàng loạt</h1>
+          <p style={{ marginBottom: "16px", color: "#666", fontSize: "14px" }}>
+            Lấy tài khoản 2.0 và mở link đăng nhập → đăng nhập trên trang 2.0 (cookie/session lấy theo link đó) → Lấy danh sách ký hiệu và chọn tờ khai đăng ký → Lấy danh sách đang gửi → Kiểm tra hàng loạt.
+          </p>
+          <div
+            style={{
+              padding: "20px",
+              backgroundColor: "#f8f9fa",
+              borderRadius: "8px",
+              border: "1px solid #dee2e6",
+              maxWidth: "800px",
+            }}
+          >
+            <div style={{ marginBottom: "12px" }}>
+              <label style={{ display: "block", marginBottom: "4px", fontWeight: "bold", fontSize: "14px" }}>
+                Mã số thuế
+              </label>
+              <input
+                type="text"
+                value={checkTaxCode}
+                onChange={(e) => setCheckTaxCode(e.target.value)}
+                placeholder="VD: 3700143591"
+                style={{ width: "100%", padding: "8px", border: "1px solid #ddd", borderRadius: "4px", fontSize: "14px" }}
+              />
+            </div>
+            <div style={{ marginBottom: "12px" }}>
+              <button
+                type="button"
+                onClick={handleGetAccount20}
+                disabled={loadingCheckAccount}
+                style={{
+                  padding: "10px 20px",
+                  backgroundColor: loadingCheckAccount ? "#ccc" : "#007bff",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "4px",
+                  fontSize: "14px",
+                  cursor: loadingCheckAccount ? "not-allowed" : "pointer",
+                  fontWeight: "bold",
+                }}
+              >
+                {loadingCheckAccount ? "Đang lấy..." : "Lấy tài khoản 2.0 & mở link đăng nhập"}
+              </button>
+              {checkAccount20 && (
+                <div style={{ marginTop: "8px", fontSize: "13px", color: "#333" }}>
+                  Tài khoản: <strong>{checkAccount20.account}</strong> — Mật khẩu: <strong>{checkAccount20.password}</strong>
+                </div>
+              )}
+            </div>
+            <div style={{ marginBottom: "12px" }}>
+              <label style={{ display: "block", marginBottom: "4px", fontWeight: "bold", fontSize: "14px" }}>
+                Ký hiệu (tờ khai đăng ký)
+              </label>
+              <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  onClick={handleFetchCheckRegisterList}
+                  disabled={loadingCheckRegisterList || !checkTaxCode.trim()}
+                  style={{
+                    padding: "8px 16px",
+                    backgroundColor: loadingCheckRegisterList || !checkTaxCode.trim() ? "#ccc" : "#28a745",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "4px",
+                    fontSize: "13px",
+                    cursor: loadingCheckRegisterList || !checkTaxCode.trim() ? "not-allowed" : "pointer",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {loadingCheckRegisterList ? "Đang tải..." : "Lấy danh sách ký hiệu"}
+                </button>
+                <select
+                  value={checkRegisterInvoiceId}
+                  onChange={(e) => setCheckRegisterInvoiceId(e.target.value)}
+                  disabled={checkRegisterList.length === 0}
+                  style={{
+                    minWidth: "280px",
+                    padding: "8px",
+                    border: "1px solid #ddd",
+                    borderRadius: "4px",
+                    fontSize: "14px",
+                    cursor: checkRegisterList.length > 0 ? "pointer" : "not-allowed",
+                  }}
+                >
+                  <option value="">
+                    {checkRegisterList.length === 0 ? "-- Đăng nhập 2.0 xong rồi bấm Lấy danh sách ký hiệu --" : "-- Chọn ký hiệu (tờ khai đăng ký) --"}
+                  </option>
+                  {checkRegisterList.map((reg) => (
+                    <option key={reg.id} value={reg.id}>
+                      {reg.name || reg.id}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div style={{ marginBottom: "16px", display: "flex", gap: "10px", flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={handleFetchSendingList}
+                disabled={loadingCheckList}
+                style={{
+                  padding: "10px 20px",
+                  backgroundColor: loadingCheckList ? "#ccc" : "#28a745",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "4px",
+                  fontSize: "14px",
+                  cursor: loadingCheckList ? "not-allowed" : "pointer",
+                  fontWeight: "bold",
+                }}
+              >
+                {loadingCheckList ? "Đang lấy danh sách..." : "Lấy danh sách đang gửi"}
+              </button>
+              <button
+                type="button"
+                onClick={handleBatchCheck}
+                disabled={loadingCheckBatch || !checkInvoiceList.length}
+                style={{
+                  padding: "10px 20px",
+                  backgroundColor: loadingCheckBatch || !checkInvoiceList.length ? "#ccc" : "#17a2b8",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "4px",
+                  fontSize: "14px",
+                  cursor: loadingCheckBatch || !checkInvoiceList.length ? "not-allowed" : "pointer",
+                  fontWeight: "bold",
+                }}
+              >
+                {loadingCheckBatch ? "Đang kiểm tra..." : `Kiểm tra hàng loạt (${checkInvoiceList.length})`}
+              </button>
+            </div>
+            {checkInvoiceList.length > 0 && (
+              <div style={{ marginTop: "16px", fontSize: "13px", color: "#333" }}>
+                Đã lấy <strong>{checkInvoiceList.length}</strong> hóa đơn trạng thái đang gửi.
+              </div>
+            )}
+            {checkResults.length > 0 && (
+              <div style={{ marginTop: "20px", overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", border: "1px solid #ddd", fontSize: "13px" }}>
+                  <thead>
+                    <tr style={{ backgroundColor: "#f1f1f1" }}>
+                      <th style={{ padding: "8px", border: "1px solid #ddd", textAlign: "left" }}>Ký hiệu</th>
+                      <th style={{ padding: "8px", border: "1px solid #ddd", textAlign: "left" }}>Số HĐ</th>
+                      <th style={{ padding: "8px", border: "1px solid #ddd", textAlign: "left" }}>Trạng thái</th>
+                      <th style={{ padding: "8px", border: "1px solid #ddd", textAlign: "left" }}>Chi tiết</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {checkResults.map((r, idx) => (
+                      <tr key={r.id || idx}>
+                        <td style={{ padding: "8px", border: "1px solid #ddd" }}>{r.invoiceSerial}</td>
+                        <td style={{ padding: "8px", border: "1px solid #ddd" }}>{r.invoiceNumber}</td>
+                        <td style={{ padding: "8px", border: "1px solid #ddd" }}>{r.status === "ok" ? "OK" : "Lỗi"}</td>
+                        <td style={{ padding: "8px", border: "1px solid #ddd", maxWidth: "300px", wordBreak: "break-all" }}>
+                          {r.status === "ok" ? JSON.stringify(r.data) : (r.message || "")}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {activeTab === "update-error" && (
         <div style={{ padding: "20px" }}>
