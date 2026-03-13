@@ -287,7 +287,7 @@ const InsertCKS = () => {
     }
   };
   // Chạy ngầm: sau khi thêm CKS xong thì tự động gọi API 1.0
-  // để lấy tờ khai mới nhất (CM0006_70) và chi tiết tờ khai.
+  // để lấy tờ khai mới nhất (CM0006) và chi tiết tờ khai.
   const fetchLatestDeclarationFromOldApp = async (currentTaxCode, token) => {
     try {
       if (!currentTaxCode || !token) return;
@@ -296,7 +296,7 @@ const InsertCKS = () => {
       const baseUrl = `https://${sanitizedTaxCode}.minvoice.com.vn`;
       const authHeader = `Bear ${token};VP;vi`;
 
-      // Bước 1: Lấy danh sách tờ khai (CM0006_70)
+      // Bước 1: Lấy danh sách tờ khai (CM0006)
       const listResponse = await fetch(`${baseUrl}/api/Pattern/GetData`, {
         method: "POST",
         headers: {
@@ -314,7 +314,7 @@ const InsertCKS = () => {
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
         },
         body: JSON.stringify({
-          command: "CM0006_70",
+          command: "CM0006",
           start: 0,
           count: 50,
           filter: [],
@@ -351,9 +351,9 @@ const InsertCKS = () => {
         return;
       }
 
-      // Bước 2: Lấy chi tiết tờ khai theo ID
+      // Bước 2: Lấy chi tiết tờ khai theo ID (Register68/GetMau01Detail)
       const detailResponse = await fetch(
-        `${baseUrl}/api/Register70/GetRegisterInvoice?id=${encodeURIComponent(
+        `${baseUrl}/api/Register68/GetMau01Detail?id=${encodeURIComponent(
           latestDeclaration.id
         )}`,
         {
@@ -385,11 +385,16 @@ const InsertCKS = () => {
       }
 
       const detailJson = await detailResponse.json();
+      if (detailJson?.code !== "00" || !detailJson?.data) {
+        console.warn("GetMau01Detail không trả về data:", detailJson?.message || detailJson);
+        return;
+      }
+      const detailData = detailJson.data;
       console.log("Tờ khai mới nhất (summary):", latestDeclaration);
-      console.log("Chi tiết tờ khai mới nhất (detail):", detailJson);
+      console.log("Chi tiết tờ khai (GetMau01Detail):", detailData);
 
-      // Dữ liệu để map sang 2.0: ưu tiên chi tiết, fallback list item
-      const declaration1 = detailJson?.mst != null ? detailJson : latestDeclaration;
+      // Dữ liệu để map sang 2.0: dùng data từ GetMau01Detail (có đủ mst, tnnt, reg_giaiphaps, reg_tvans...)
+      const declaration1 = detailData;
       const payload2 = mapDeclaration1To2(declaration1);
       if (!payload2) {
         console.warn("Bỏ qua add tờ khai 2.0: không map được payload.");

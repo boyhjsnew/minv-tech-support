@@ -805,6 +805,194 @@ const Support = () => {
     }
   };
 
+  // Tạo hóa đơn hàng loạt: copy hóa đơn cũ và tạo hóa đơn mới với ngày hiện tại (editmode: 1)
+  const handleBulkCreateInvoices = async () => {
+    // Validate basic input (giống cập nhật ngày)
+    if (!bulkTaxCode.trim()) {
+      toast.error(
+        <ToastNotify status={1} message="Vui lòng nhập mã số thuế" />,
+        { style: styleError }
+      );
+      return;
+    }
+    if (!selectedSeries) {
+      toast.error(
+        <ToastNotify status={1} message="Vui lòng chọn ký hiệu" />,
+        { style: styleError }
+      );
+      return;
+    }
+    if (!bulkFromNumber.trim() || !bulkToNumber.trim()) {
+      toast.error(
+        <ToastNotify
+          status={1}
+          message="Vui lòng nhập khoảng số hóa đơn (từ số, đến số)"
+        />,
+        { style: styleError }
+      );
+      return;
+    }
+    const fromNum = parseInt(bulkFromNumber, 10);
+    const toNum = parseInt(bulkToNumber, 10);
+    if (isNaN(fromNum) || isNaN(toNum) || fromNum > toNum) {
+      toast.error(
+        <ToastNotify
+          status={1}
+          message="Khoảng số hóa đơn không hợp lệ. Từ số phải nhỏ hơn hoặc bằng đến số."
+        />,
+        { style: styleError }
+      );
+      return;
+    }
+
+    setLoadingInvoices(true);
+    setInvoiceList([]);
+
+    try {
+      const domainSuffix = bulkTaxCode.endsWith("-998")
+        ? ".minvoice.site"
+        : ".minvoice.app";
+      const baseUrl = `https://${bulkTaxCode}${domainSuffix}`;
+      const getInfoUrl = `${baseUrl}/api/InvoiceApi78/GetInfoInvoice`;
+      const saveUrl = `${baseUrl}/api/InvoiceApi78/Save`;
+
+      const getInvoiceHeaders = {
+        "Content-Type": "application/json",
+        Authorization: SAVE_API_AUTH,
+      };
+
+      const results = [];
+      const todayStr = new Date().toISOString().slice(0, 10);
+
+      // Xử lý từ số lớn xuống số nhỏ để bám theo logic hiện tại
+      for (let number = toNum; number >= fromNum; number--) {
+        try {
+          const response = await axios.get(getInfoUrl, {
+            params: { number, seri: selectedSeries },
+            headers: getInvoiceHeaders,
+          });
+
+          if (
+            !response?.data ||
+            response.data.code !== "00" ||
+            !response.data.data
+          ) {
+            results.push({
+              number,
+              seri: selectedSeries,
+              hoadon68_id: null,
+              inv_invoiceAuth_id: null,
+              khieu: selectedSeries,
+              shdon: number,
+              tthai: "",
+              status: "error",
+              updateStatus: "error",
+              updateError:
+                response?.data?.message || "Không lấy được thông tin HĐ để tạo mới",
+            });
+            setInvoiceList([...results]);
+            continue;
+          }
+
+          const invoice = response.data.data;
+          // Chỉ tạo mới cho hóa đơn có trạng thái trang_thai = 5 (Chờ ký)
+          const statusCode = typeof invoice.trang_thai === "number"
+            ? invoice.trang_thai
+            : parseInt(invoice.trang_thai ?? invoice.tthai_code ?? -1, 10);
+          const statusText = invoice.tthai || invoice.trang_thai_text || "";
+          if (statusCode !== 5) {
+            results.push({
+              number,
+              seri: selectedSeries,
+              hoadon68_id: invoice.hoadon68_id,
+              inv_invoiceAuth_id: invoice.inv_invoiceAuth_id,
+              khieu: invoice.inv_invoiceSeries || invoice.khieu || selectedSeries,
+              shdon: invoice.inv_invoiceNumber || invoice.shdon || number,
+              tthai: statusText || String(statusCode),
+              status: "skipped",
+              updateStatus: "skipped",
+              updateError: "Bỏ qua: chỉ tạo mới hóa đơn có trạng_thai = 5 (Chờ ký)",
+            });
+            setInvoiceList([...results]);
+            continue;
+          }
+          // Map dữ liệu và set ngày hóa đơn là ngày hiện tại
+          const saveDataItem = mapInvoiceToSaveData(invoice, todayStr);
+          // Khi tạo mới, nếu giữ nguyên key_api sẽ bị backend check trùng → bỏ key_api để backend tự sinh
+          const newDataItem = { ...saveDataItem };
+          delete newDataItem.key_api;
+
+          const savePayload = {
+            editmode: 1, // Tạo mới
+            data: [newDataItem],
+          };
+
+          await axios.post(saveUrl, savePayload, {
+            headers: SAVE_API_HEADERS,
+          });
+
+          results.push({
+            number,
+            seri: selectedSeries,
+            hoadon68_id: invoice.hoadon68_id,
+            inv_invoiceAuth_id: invoice.inv_invoiceAuth_id,
+            khieu: invoice.inv_invoiceSeries || invoice.khieu || selectedSeries,
+            shdon: invoice.inv_invoiceNumber || invoice.shdon || number,
+            tthai: invoice.tthai || "",
+            status: "success",
+            updateStatus: "success",
+          });
+        } catch (err) {
+          const message =
+            err?.response?.data?.message ||
+            err?.response?.data?.Message ||
+            err?.message ||
+            "Lỗi không xác định khi tạo mới hóa đơn";
+          results.push({
+            number,
+            seri: selectedSeries,
+            hoadon68_id: null,
+            inv_invoiceAuth_id: null,
+            khieu: selectedSeries,
+            shdon: number,
+            tthai: "",
+            status: "error",
+            updateStatus: "error",
+            updateError: message,
+          });
+        }
+        setInvoiceList([...results]);
+      }
+
+      // Sắp xếp lại kết quả theo số hóa đơn tăng dần để dễ xem
+      results.sort((a, b) => (a.number ?? 0) - (b.number ?? 0));
+      setInvoiceList([...results]);
+
+      const successCount = results.filter((r) => r.updateStatus === "success").length;
+      const failCount = results.filter((r) => r.updateStatus !== "success").length;
+      toast.info(
+        <ToastNotify
+          status={0}
+          message={`Tạo mới hóa đơn: ${successCount} thành công, ${failCount} thất bại`}
+        />,
+        { style: styleSuccess }
+      );
+    } catch (error) {
+      console.error("Lỗi khi tạo hóa đơn hàng loạt:", error);
+      const message =
+        error?.response?.data?.message ||
+        error?.response?.data?.Message ||
+        error?.message ||
+        "Lỗi không xác định khi tạo hóa đơn hàng loạt";
+      toast.error(
+        <ToastNotify status={1} message={message} />,
+        { style: styleError }
+      );
+    } finally {
+      setLoadingInvoices(false);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -2260,24 +2448,46 @@ const Support = () => {
                 </div>
               </div>
 
-              <button
-                type="submit"
-                disabled={loadingInvoices}
-                style={{
-                  padding: "10px 20px",
-                  backgroundColor: loadingInvoices ? "#ccc" : "#28a745",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "4px",
-                  fontSize: "14px",
-                  cursor: loadingInvoices ? "not-allowed" : "pointer",
-                  fontWeight: "bold",
-                }}
-              >
-                {loadingInvoices
-                  ? "Đang lấy và cập nhật ngày HĐ..."
-                  : "Lấy từng HĐ và cập nhật ngày (Save API)"}
-              </button>
+              <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                <button
+                  type="submit"
+                  disabled={loadingInvoices}
+                  style={{
+                    padding: "10px 20px",
+                    backgroundColor: loadingInvoices ? "#ccc" : "#28a745",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "4px",
+                    fontSize: "14px",
+                    cursor: loadingInvoices ? "not-allowed" : "pointer",
+                    fontWeight: "bold",
+                  }}
+                >
+                  {loadingInvoices
+                    ? "Đang lấy và cập nhật ngày HĐ..."
+                    : "Lấy từng HĐ và cập nhật ngày (Save API)"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleBulkCreateInvoices}
+                  disabled={loadingInvoices}
+                  style={{
+                    padding: "10px 20px",
+                    backgroundColor: loadingInvoices ? "#ccc" : "#007bff",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "4px",
+                    fontSize: "14px",
+                    cursor: loadingInvoices ? "not-allowed" : "pointer",
+                    fontWeight: "bold",
+                  }}
+                >
+                  {loadingInvoices
+                    ? "Đang tạo mới hóa đơn..."
+                    : "Tạo mới hóa đơn theo khoảng số (ngày hôm nay)"}
+                </button>
+              </div>
             </form>
 
             {invoiceList.length > 0 && (

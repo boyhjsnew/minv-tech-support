@@ -30,8 +30,9 @@ const DEFAULT_PARTNERS = [
 ];
 
 /**
- * Map dữ liệu tờ khai 1.0 (GetRegisterInvoice / list CM0006_70) sang payload 2.0.
- * @param {Object} declaration1 - Một item từ list CM0006_70 hoặc response GetRegisterInvoice
+ * Map dữ liệu tờ khai 1.0 (GetMau01Detail / list CM0006) sang payload 2.0.
+ * GetMau01Detail trả về { code, message, data } với data có: mst, tnnt, nlap, reg_giaiphaps, reg_tvans, ...
+ * @param {Object} declaration1 - data từ Register68/GetMau01Detail hoặc item từ list CM0006
  * @returns {Object} Payload đúng format 2.0
  */
 export function mapDeclaration1To2(declaration1) {
@@ -98,24 +99,66 @@ export function mapDeclaration1To2(declaration1) {
 }
 
 /**
- * Nếu 1.0 trả về partners (hoặc mảng tương đương), map sang format 2.0.
+ * Lấy fromDate dạng YYYY-MM-DD từ chuỗi datetime 1.0.
+ */
+function toDateOnly(val) {
+  if (val == null) return null;
+  const s = typeof val === "string" ? val : String(val);
+  if (s.length >= 10) return s.slice(0, 10);
+  return s || null;
+}
+
+/**
+ * Nếu 1.0 trả về partners (partners, reg_giaiphaps, reg_tvans), map sang format 2.0.
  * Format 2.0: { partnerName, partnerTaxCode, fromDate, toDate, note, type, declarationRegisterId?, default?, id? }
+ * GetMau01Detail: reg_giaiphaps (TCGP) -> type 0, reg_tvans (TCTN) -> type 1.
  */
 function mapPartnersFrom1(d) {
   if (Array.isArray(d.partners) && d.partners.length > 0) {
     return d.partners.map((p) => ({
       partnerName: p.partnerName ?? p.ten ?? "",
       partnerTaxCode: p.partnerTaxCode ?? p.mst ?? "",
-      fromDate: p.fromDate ?? p.tu_ngay ?? null,
-      toDate: p.toDate ?? p.den_ngay ?? null,
-      note: p.note ?? p.ghi_chu ?? "",
+      fromDate: toDateOnly(p.fromDate ?? p.tu_ngay ?? p.tngay),
+      toDate: toDateOnly(p.toDate ?? p.den_ngay ?? p.dngay),
+      note: p.note ?? p.ghi_chu ?? p.gchu ?? "",
       type: typeof p.type === "number" ? p.type : 0,
-      declarationRegisterId: p.declarationRegisterId ?? p.id ?? null,
+      declarationRegisterId: p.declarationRegisterId ?? p.reg_dauphieu_id ?? p.id ?? null,
       default: !!p.default,
-      id: p.id ?? null,
+      id: p.reg_giaiphap_id ?? p.reg_tvan_id ?? p.id ?? null,
     }));
   }
-  return [];
+  const partners = [];
+  if (Array.isArray(d.reg_giaiphaps)) {
+    d.reg_giaiphaps.forEach((p) => {
+      partners.push({
+        partnerName: (p.ten_tcgp || "").toString().trim(),
+        partnerTaxCode: (p.mst_tcgp || "").toString().trim(),
+        fromDate: toDateOnly(p.tngay),
+        toDate: toDateOnly(p.dngay),
+        note: (p.gchu || "").toString().trim(),
+        type: 0,
+        declarationRegisterId: d.reg_dauphieu_id ?? null,
+        default: false,
+        id: p.reg_giaiphap_id ?? null,
+      });
+    });
+  }
+  if (Array.isArray(d.reg_tvans)) {
+    d.reg_tvans.forEach((p) => {
+      partners.push({
+        partnerName: (p.ten_tctn || "").toString().trim(),
+        partnerTaxCode: (p.mst_tctn || "").toString().trim(),
+        fromDate: toDateOnly(p.tngay),
+        toDate: toDateOnly(p.dngay),
+        note: (p.gchu || "").toString().trim(),
+        type: 1,
+        declarationRegisterId: d.reg_dauphieu_id ?? null,
+        default: false,
+        id: p.reg_tvan_id ?? null,
+      });
+    });
+  }
+  return partners;
 }
 
 /**
