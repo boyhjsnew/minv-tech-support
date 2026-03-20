@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import ToastNotify from "../components/ToastNotify";
@@ -8,6 +8,7 @@ import GetInvoiceFiles from "./GetInvoiceFiles";
 import { useSearchParams } from "react-router-dom";
 import GetTokenCRM from "../Utils/GetTokenCRM";
 import ResetPasswordNewApp from "../Utils/ResetPasswordNewApp";
+import { Dropdown } from "primereact/dropdown";
 
 // Ẩn chức năng xoá chứng từ TNCN (đặt true để hiện lại)
 const SHOW_TNCN_DELETE = false;
@@ -133,6 +134,16 @@ const Support = () => {
   const [loadingCheckBatch, setLoadingCheckBatch] = useState(false);
 
   const domain = "http://bienlai70.vpdkddtphcm.com.vn";
+
+  /** Options cho PrimeReact Dropdown (ký hiệu / tờ khai đăng ký) — có filter sẵn trên dropdown */
+  const checkRegisterDropdownOptions = useMemo(
+    () =>
+      checkRegisterList.map((reg) => ({
+        label: reg.name || String(reg.id),
+        value: reg.id,
+      })),
+    [checkRegisterList]
+  );
 
   // Các trường cố định
   const fixedData = {
@@ -1661,28 +1672,42 @@ const Support = () => {
                 >
                   {loadingCheckRegisterList ? "Đang tải..." : "Lấy danh sách ký hiệu"}
                 </button>
-                <select
-                  value={checkRegisterInvoiceId}
-                  onChange={(e) => setCheckRegisterInvoiceId(e.target.value)}
-                  disabled={checkRegisterList.length === 0}
-                  style={{
-                    minWidth: "280px",
-                    padding: "8px",
-                    border: "1px solid #ddd",
-                    borderRadius: "4px",
-                    fontSize: "14px",
-                    cursor: checkRegisterList.length > 0 ? "pointer" : "not-allowed",
-                  }}
-                >
-                  <option value="">
-                    {checkRegisterList.length === 0 ? "-- Đăng nhập 2.0 xong rồi bấm Lấy danh sách ký hiệu --" : "-- Chọn ký hiệu (tờ khai đăng ký) --"}
-                  </option>
-                  {checkRegisterList.map((reg) => (
-                    <option key={reg.id} value={reg.id}>
-                      {reg.name || reg.id}
-                    </option>
-                  ))}
-                </select>
+              </div>
+              <div style={{ marginTop: "12px", maxWidth: "480px" }}>
+                <Dropdown
+                  inputId="checkRegisterInvoice"
+                  value={
+                    checkRegisterInvoiceId &&
+                    checkRegisterDropdownOptions.some((o) => o.value === checkRegisterInvoiceId)
+                      ? checkRegisterInvoiceId
+                      : null
+                  }
+                  options={checkRegisterDropdownOptions}
+                  onChange={(e) => setCheckRegisterInvoiceId(e.value ?? "")}
+                  optionLabel="label"
+                  optionValue="value"
+                  placeholder={
+                    checkRegisterList.length === 0
+                      ? "Lấy danh sách ký hiệu trước..."
+                      : "Chọn ký hiệu (tờ khai đăng ký)..."
+                  }
+                  filter
+                  filterBy="label,value"
+                  filterPlaceholder="Tìm theo tên ký hiệu hoặc ID..."
+                  showClear
+                  emptyMessage="Chưa có dữ liệu — bấm “Lấy danh sách ký hiệu”"
+                  emptyFilterMessage="Không tìm thấy ký hiệu phù hợp"
+                  disabled={checkRegisterList.length === 0 || loadingCheckRegisterList}
+                  className="w-full"
+                  panelStyle={{ maxHeight: "320px" }}
+                  style={{ width: "100%" }}
+                />
+                {checkRegisterList.length > 0 && (
+                  <small style={{ display: "block", marginTop: "6px", color: "#666", fontSize: "12px" }}>
+                    <i className="pi pi-filter" style={{ marginRight: "4px" }} />
+                    Gõ trong ô tìm kiếm của dropdown để lọc nhanh ({checkRegisterList.length} ký hiệu).
+                  </small>
+                )}
               </div>
             </div>
             <div style={{ marginBottom: "16px", display: "flex", gap: "10px", flexWrap: "wrap" }}>
