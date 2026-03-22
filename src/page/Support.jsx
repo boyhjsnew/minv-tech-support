@@ -906,12 +906,18 @@ const Support = () => {
           }
 
           const invoice = response.data.data;
-          // Chỉ tạo mới cho hóa đơn có trạng thái trang_thai = 5 (Chờ ký)
-          const statusCode = typeof invoice.trang_thai === "number"
-            ? invoice.trang_thai
-            : parseInt(invoice.trang_thai ?? invoice.tthai_code ?? -1, 10);
-          const statusText = invoice.tthai || invoice.trang_thai_text || "";
-          if (statusCode !== 5) {
+          // Chỉ tạo mới khi đủ một trong hai: trang_thai = 5 HOẶC tthai = "Chờ ký"
+          const statusText = (invoice.tthai || invoice.trang_thai_text || "").trim();
+          const rawTrangThai = invoice.trang_thai;
+          const trangThaiNum =
+            typeof rawTrangThai === "number" && !Number.isNaN(rawTrangThai)
+              ? rawTrangThai
+              : rawTrangThai != null && String(rawTrangThai).trim() !== ""
+                ? parseInt(String(rawTrangThai).trim(), 10)
+                : NaN;
+          const isChoKy =
+            trangThaiNum === 5 || statusText === "Chờ ký";
+          if (!isChoKy) {
             results.push({
               number,
               seri: selectedSeries,
@@ -919,10 +925,11 @@ const Support = () => {
               inv_invoiceAuth_id: invoice.inv_invoiceAuth_id,
               khieu: invoice.inv_invoiceSeries || invoice.khieu || selectedSeries,
               shdon: invoice.inv_invoiceNumber || invoice.shdon || number,
-              tthai: statusText || String(statusCode),
+              tthai: statusText || (Number.isNaN(trangThaiNum) ? "" : String(trangThaiNum)),
               status: "skipped",
               updateStatus: "skipped",
-              updateError: "Bỏ qua: chỉ tạo mới hóa đơn có trạng_thai = 5 (Chờ ký)",
+              updateError:
+                "Bỏ qua: chỉ tạo mới khi trang_thai = 5 hoặc tthai = \"Chờ ký\"",
             });
             setInvoiceList([...results]);
             continue;
