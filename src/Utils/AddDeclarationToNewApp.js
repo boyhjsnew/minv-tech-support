@@ -244,7 +244,26 @@ export async function addDeclarationToNewApp(taxCode, payload, options = {}) {
         validateStatus: (status) => status >= 200 && status < 300,
       }
     );
-    return { success: true, data: res.data };
+    const responseData = res?.data;
+    // Một số API trả HTTP 200 nhưng business fail qua các trường message/error/success.
+    if (
+      responseData &&
+      ((responseData.success === false) ||
+        (responseData.isSuccess === false) ||
+        (responseData.status === false) ||
+        (typeof responseData.code !== "undefined" &&
+          String(responseData.code) !== "00" &&
+          String(responseData.code) !== "0" &&
+          String(responseData.code) !== "200"))
+    ) {
+      const msg =
+        responseData?.message ||
+        responseData?.Message ||
+        responseData?.error ||
+        "API trả về trạng thái lỗi";
+      return { success: false, error: msg, data: responseData };
+    }
+    return { success: true, data: responseData };
   } catch (err) {
     const status = err?.response?.status;
     const location = err?.response?.headers?.location;

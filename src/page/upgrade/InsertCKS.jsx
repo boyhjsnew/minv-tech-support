@@ -385,11 +385,49 @@ const InsertCKS = () => {
       }
 
       const detailJson = await detailResponse.json();
-      if (detailJson?.code !== "00" || !detailJson?.data) {
-        console.warn("GetMau01Detail không trả về data:", detailJson?.message || detailJson);
+      let detailData = null;
+
+      // Format A (thường gặp): { code, message, data: {...} }
+      if (detailJson && typeof detailJson === "object" && !Array.isArray(detailJson) && "data" in detailJson) {
+        const detailCode = detailJson?.code;
+        const isDetailSuccess =
+          detailJson?.data &&
+          (detailCode === "00" ||
+            detailCode === 0 ||
+            detailCode === "0" ||
+            detailCode === 200 ||
+            detailCode === "200" ||
+            detailCode == null);
+        if (!isDetailSuccess) {
+          const msg = detailJson?.message || "GetMau01Detail không trả về dữ liệu hợp lệ";
+          console.warn("GetMau01Detail không trả về data:", detailJson);
+          toast.error(
+            <ToastNotify status={-1} message={`Lấy chi tiết tờ khai thất bại: ${msg}`} />,
+            { style: styleError }
+          );
+          return;
+        }
+        detailData = detailJson.data;
+      }
+
+      // Format B: API trả trực tiếp mảng chi tiết CKS [{ mau01_chitiet_id, ... }]
+      if (Array.isArray(detailJson)) {
+        // Với format này, dữ liệu tờ khai chính vẫn lấy từ list CM0006 (latestDeclaration).
+        // Chỉ gắn thêm mảng chi tiết để có thể debug/đối soát khi cần.
+        detailData = {
+          ...latestDeclaration,
+          details: detailJson,
+        };
+      }
+
+      if (!detailData) {
+        console.warn("GetMau01Detail trả về format chưa hỗ trợ:", detailJson);
+        toast.error(
+          <ToastNotify status={-1} message="Lấy chi tiết tờ khai thất bại: format dữ liệu chưa hỗ trợ" />,
+          { style: styleError }
+        );
         return;
       }
-      const detailData = detailJson.data;
       console.log("Tờ khai mới nhất (summary):", latestDeclaration);
       console.log("Chi tiết tờ khai (GetMau01Detail):", detailData);
 
@@ -408,8 +446,22 @@ const InsertCKS = () => {
       const addResult = await addDeclarationToNewApp(currentTaxCode, payload2);
       if (addResult.success) {
         console.log("Đã add tờ khai lên 2.0 thành công:", addResult.data);
+        toast.success(
+          <ToastNotify status={0} message="Đã add tờ khai mới nhất lên 2.0 thành công" />,
+          { style: styleSuccess }
+        );
       } else {
         console.warn("Add tờ khai 2.0 thất bại:", addResult.error);
+        toast.error(
+          <ToastNotify
+            status={-1}
+            message={`Add tờ khai 2.0 thất bại: ${
+              getErrorMessage(addResult?.error) ||
+              "Vui lòng kiểm tra lại phiên đăng nhập/cookie trang 2.0"
+            }`}
+          />,
+          { style: styleError }
+        );
       }
     } catch (error) {
       console.error(
