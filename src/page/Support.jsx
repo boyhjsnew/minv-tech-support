@@ -156,6 +156,9 @@ const Support = () => {
     loai_doanh_nghiep: "",
   };
 
+  /** Trạng thái gửi CQT khi lấy danh sách kiểm tra hàng loạt: 2 (đã ký), 3 (đang gửi) — khớp filter trên web 2.0 */
+  const CHECK_SENDING_TAX_STATUSES = "2,3";
+
   useEffect(() => {
     document.title = "Cập nhật DB 2.0";
     // Đọc query parameter từ URL
@@ -1194,7 +1197,7 @@ const Support = () => {
     }
   };
 
-  // --- Kiểm tra đang gửi hàng loạt: lấy danh sách hóa đơn trạng thái đang gửi (sendTaxStatus=3)
+  // --- Kiểm tra đang gửi hàng loạt: lấy danh sách hóa đơn sendTaxStatus=2,3 (đã ký + đang gửi CQT)
   const handleFetchSendingList = async () => {
     const tax = (checkTaxCode || "").trim().replace(/-/g, "");
     const regId = (checkRegisterInvoiceId || "").trim();
@@ -1231,7 +1234,7 @@ const Support = () => {
       let skipCount = 0;
       let totalCount = null;
       do {
-        const url = `${baseUrl}/api/api/app/invoice?maxResultCount=${PAGE_SIZE}&skipCount=${skipCount}&sendTaxStatus=3&registerInvoiceId=${encodeURIComponent(regId)}&loadAll=false`;
+        const url = `${baseUrl}/api/api/app/invoice?maxResultCount=${PAGE_SIZE}&skipCount=${skipCount}&sendTaxStatus=${CHECK_SENDING_TAX_STATUSES}&registerInvoiceId=${encodeURIComponent(regId)}&loadAll=false`;
         const res = await axios.get(url, { headers, withCredentials: true });
         const data = res.data;
         const items = Array.isArray(data.items) ? data.items : [];
@@ -1243,7 +1246,10 @@ const Support = () => {
       } while (totalCount == null || allItems.length < totalCount);
       setCheckInvoiceList(allItems);
       toast.success(
-        <ToastNotify status={0} message={`Đã lấy ${allItems.length} hóa đơn trạng thái đang gửi`} />,
+        <ToastNotify
+          status={0}
+          message={`Đã lấy ${allItems.length} hóa đơn (gửi CQT: đã ký + đang gửi, sendTaxStatus=${CHECK_SENDING_TAX_STATUSES})`}
+        />,
         { style: styleSuccess }
       );
     } catch (err) {
@@ -1258,7 +1264,9 @@ const Support = () => {
   // --- Kiểm tra đang gửi hàng loạt: gọi m-gate-way/result cho từng hóa đơn
   const handleBatchCheck = async () => {
     if (!checkInvoiceList.length) {
-      toast.error(<ToastNotify status={-1} message="Hãy lấy danh sách đang gửi trước" />, { style: styleError });
+      toast.error(<ToastNotify status={-1} message="Hãy lấy danh sách hóa đơn (đã ký / đang gửi CQT) trước" />, {
+        style: styleError,
+      });
       return;
     }
     const tax = (checkTaxCode || "").trim().replace(/-/g, "");
@@ -1287,6 +1295,8 @@ const Support = () => {
     for (let i = 0; i < checkInvoiceList.length; i++) {
       const inv = checkInvoiceList[i];
       const id = inv.id;
+      const sendTaxStatus =
+        inv.sendTaxStatus ?? inv.taxSendStatus ?? inv.sendTaxStatusCode ?? "";
       if (!id) continue;
       try {
         const res = await axios.get(
@@ -1297,6 +1307,7 @@ const Support = () => {
           id,
           invoiceNumber: inv.invoiceNumber,
           invoiceSerial: inv.invoiceSerial,
+          sendTaxStatus,
           status: "ok",
           data: res.data,
         });
@@ -1305,6 +1316,7 @@ const Support = () => {
           id,
           invoiceNumber: inv.invoiceNumber,
           invoiceSerial: inv.invoiceSerial,
+          sendTaxStatus,
           status: "error",
           message: err?.response?.data?.message || err?.message || "Lỗi",
         });
@@ -1610,7 +1622,7 @@ const Support = () => {
         <div style={{ padding: "20px" }}>
           <h1 style={{ marginBottom: "20px" }}>Kiểm tra đang gửi hàng loạt</h1>
           <p style={{ marginBottom: "16px", color: "#666", fontSize: "14px" }}>
-            Lấy tài khoản 2.0 và mở link đăng nhập → đăng nhập trên trang 2.0 (cookie/session lấy theo link đó) → Lấy danh sách ký hiệu và chọn tờ khai đăng ký → Lấy danh sách đang gửi → Kiểm tra hàng loạt.
+            Lấy tài khoản 2.0 và mở link đăng nhập → đăng nhập trên trang 2.0 (cookie/session lấy theo link đó) → Lấy danh sách ký hiệu và chọn tờ khai đăng ký → Lấy danh sách hóa đơn <strong>đã ký</strong> và <strong>đang gửi CQT</strong> (<code>sendTaxStatus=2,3</code>) → Kiểm tra hàng loạt qua m-gate-way.
           </p>
           <div
             style={{
@@ -1733,7 +1745,7 @@ const Support = () => {
                   fontWeight: "bold",
                 }}
               >
-                {loadingCheckList ? "Đang lấy danh sách..." : "Lấy danh sách đang gửi"}
+                {loadingCheckList ? "Đang lấy danh sách..." : "Lấy danh sách (đã ký + đang gửi CQT)"}
               </button>
               <button
                 type="button"
@@ -1755,7 +1767,7 @@ const Support = () => {
             </div>
             {checkInvoiceList.length > 0 && (
               <div style={{ marginTop: "16px", fontSize: "13px", color: "#333" }}>
-                Đã lấy <strong>{checkInvoiceList.length}</strong> hóa đơn trạng thái đang gửi.
+                Đã lấy <strong>{checkInvoiceList.length}</strong> hóa đơn (sendTaxStatus 2 = đã ký, 3 = đang gửi CQT).
               </div>
             )}
             {checkResults.length > 0 && (
@@ -1765,6 +1777,7 @@ const Support = () => {
                     <tr style={{ backgroundColor: "#f1f1f1" }}>
                       <th style={{ padding: "8px", border: "1px solid #ddd", textAlign: "left" }}>Ký hiệu</th>
                       <th style={{ padding: "8px", border: "1px solid #ddd", textAlign: "left" }}>Số HĐ</th>
+                      <th style={{ padding: "8px", border: "1px solid #ddd", textAlign: "left" }}>TT gửi CQT</th>
                       <th style={{ padding: "8px", border: "1px solid #ddd", textAlign: "left" }}>Trạng thái</th>
                       <th style={{ padding: "8px", border: "1px solid #ddd", textAlign: "left" }}>Chi tiết</th>
                     </tr>
@@ -1774,6 +1787,9 @@ const Support = () => {
                       <tr key={r.id || idx}>
                         <td style={{ padding: "8px", border: "1px solid #ddd" }}>{r.invoiceSerial}</td>
                         <td style={{ padding: "8px", border: "1px solid #ddd" }}>{r.invoiceNumber}</td>
+                        <td style={{ padding: "8px", border: "1px solid #ddd" }}>
+                          {r.sendTaxStatus !== "" && r.sendTaxStatus != null ? String(r.sendTaxStatus) : "—"}
+                        </td>
                         <td style={{ padding: "8px", border: "1px solid #ddd" }}>{r.status === "ok" ? "OK" : "Lỗi"}</td>
                         <td style={{ padding: "8px", border: "1px solid #ddd", maxWidth: "300px", wordBreak: "break-all" }}>
                           {r.status === "ok" ? JSON.stringify(r.data) : (r.message || "")}
