@@ -73,12 +73,16 @@ function buildDetailsForSave(invoice) {
 function mapInvoiceToSaveData(invoice, newDateYyyyMmDd) {
   const issued = (newDateYyyyMmDd || "").trim() || invoice.inv_invoiceIssuedDate || "";
   const details = buildDetailsForSave(invoice);
-
-  return {
+  const mapped = {
     ...invoice,
     inv_invoiceIssuedDate: issued,
     details,
   };
+  // Với dữ liệu tích hợp, backend Save có thể reject nếu giữ key_api = "TICH_HOP"
+  if ((mapped.key_api || "").toString().trim().toUpperCase() === "TICH_HOP") {
+    delete mapped.key_api;
+  }
+  return mapped;
 }
 
 const Support = () => {
