@@ -708,6 +708,195 @@ const Support = () => {
     })();
   };
 
+  // Cập nhật hàng loạt ma_thue = -2 (tương đương inv_vatAmount = 0)
+  // Không động tới ngày hóa đơn.
+  const handleBulkSetMaThueMinus2 = async () => {
+    // Validate basic input
+    if (!bulkTaxCode.trim()) {
+      toast.error(<ToastNotify status={1} message="Vui lòng nhập mã số thuế" />, { style: styleError });
+      return;
+    }
+    if (!selectedSeries) {
+      toast.error(<ToastNotify status={1} message="Vui lòng chọn ký hiệu" />, { style: styleError });
+      return;
+    }
+    if (!bulkFromNumber.trim() || !bulkToNumber.trim()) {
+      toast.error(
+        <ToastNotify status={1} message="Vui lòng nhập khoảng số hóa đơn (từ số, đến số)" />,
+        { style: styleError }
+      );
+      return;
+    }
+    const fromNum = parseInt(bulkFromNumber, 10);
+    const toNum = parseInt(bulkToNumber, 10);
+    if (isNaN(fromNum) || isNaN(toNum) || fromNum > toNum) {
+      toast.error(
+        <ToastNotify status={1} message="Khoảng số hóa đơn không hợp lệ. Từ số phải nhỏ hơn hoặc bằng đến số." />,
+        { style: styleError }
+      );
+      return;
+    }
+
+    setLoadingInvoices(true);
+    setInvoiceList([]);
+
+    (async () => {
+      try {
+        const domainSuffix = bulkTaxCode.endsWith("-998") ? ".minvoice.site" : ".minvoice.app";
+        const baseUrl = `https://${bulkTaxCode}${domainSuffix}`;
+        const getInfoUrl = `${baseUrl}/api/InvoiceApi78/GetInfoInvoice`;
+        const saveUrl = `${baseUrl}/api/InvoiceApi78/Save`;
+
+        const getInvoiceHeaders = {
+          "Content-Type": "application/json",
+          Authorization: SAVE_API_AUTH,
+        };
+
+        const results = [];
+
+        // Quy định API: sửa phải xử lý từ số lớn xuống số nhỏ
+        for (let number = toNum; number >= fromNum; number--) {
+          try {
+            const response = await axios.get(getInfoUrl, {
+              params: { number, seri: selectedSeries },
+              headers: getInvoiceHeaders,
+            });
+
+            if (!response?.data || response.data.code !== "00" || !response.data.data) {
+              results.push({
+                number,
+                seri: selectedSeries,
+                hoadon68_id: null,
+                inv_invoiceAuth_id: null,
+                khieu: selectedSeries,
+                shdon: number,
+                tthai: "",
+                status: "error",
+                updateStatus: "error",
+                updateError: response?.data?.message || "Không lấy được thông tin HĐ",
+              });
+              setInvoiceList([...results]);
+              continue;
+            }
+
+            const invoice = response.data.data;
+            // Không đổi inv_invoiceIssuedDate => truyền "" để giữ nguyên
+            const saveDataItem = mapInvoiceToSaveData(invoice, "");
+            // Quy đổi sang KKKNT (ma_thue=-2):
+            // - inv_TotalAmount giữ nguyên
+            // - inv_vatAmount = 0
+            // - inv_TotalAmountWithoutVat = inv_TotalAmount
+            // - inv_unitPrice đổi sang giá đã gồm thuế cũ: round(unitPrice * (1 + ma_thue_cu/100))
+            saveDataItem.ma_thue = -2;
+            saveDataItem.inv_vatAmount = 0;
+            if (saveDataItem.inv_TotalAmount != null && saveDataItem.inv_TotalAmount !== "") {
+              saveDataItem.inv_TotalAmountWithoutVat = saveDataItem.inv_TotalAmount;
+            }
+            // Bỏ các trường tổng hợp để backend tự tính lại, tránh lệch số khi đổi ma_thue.
+            delete saveDataItem.tgtcthue;
+            delete saveDataItem.tgtthue;
+            delete saveDataItem.tgtttbso;
+            if (Array.isArray(saveDataItem.details)) {
+              saveDataItem.details.forEach((tab) => {
+                if (!tab || !Array.isArray(tab.data)) return;
+                tab.data.forEach((row) => {
+                  if (!row || typeof row !== "object") return;
+                  const oldTaxRateRaw = row.ma_thue;
+                  const oldTaxRateNum = Number(oldTaxRateRaw);
+                  const oldUnitPriceNum = Number(row.inv_unitPrice);
+                  const totalAmountNum = Number(row.inv_TotalAmount);
+                  const quantityNum = Number(row.inv_quantity);
+
+                  if (
+                    Number.isFinite(oldTaxRateNum) &&
+                    oldTaxRateNum > 0 &&
+                    Number.isFinite(oldUnitPriceNum)
+                  ) {
+                    row.inv_unitPrice = Math.round(oldUnitPriceNum * (1 + oldTaxRateNum / 100));
+                  }
+
+                  // Không thuế => tiền trước thuế chính là tổng tiền
+                  if (Number.isFinite(totalAmountNum)) {
+                    row.inv_TotalAmountWithoutVat = totalAmountNum;
+                  } else if (Number.isFinite(quantityNum) && Number.isFinite(Number(row.inv_unitPrice))) {
+                    row.inv_TotalAmountWithoutVat = Math.round(quantityNum * Number(row.inv_unitPrice));
+                  }
+
+                  row.ma_thue = -2;
+                  row.inv_vatAmount = 0;
+                });
+              });
+            }
+
+            const savePayload = {
+              editmode: invoice.editmode != null ? invoice.editmode : 2,
+              data: [saveDataItem],
+            };
+
+            await axios.post(saveUrl, savePayload, { headers: SAVE_API_HEADERS });
+
+            results.push({
+              number,
+              seri: selectedSeries,
+              hoadon68_id: invoice.hoadon68_id,
+              inv_invoiceAuth_id: invoice.inv_invoiceAuth_id,
+              khieu: invoice.inv_invoiceSeries || invoice.khieu || selectedSeries,
+              shdon: invoice.inv_invoiceNumber || invoice.shdon || number,
+              tthai: invoice.tthai || "",
+              status: "success",
+              updateStatus: "success",
+            });
+          } catch (err) {
+            const isGetError = !err.config?.method || err.config.method.toLowerCase() === "get";
+            const msg =
+              err?.response?.data?.message ||
+              err?.response?.data?.Message ||
+              err?.message ||
+              "Lỗi không xác định";
+            results.push({
+              number,
+              seri: selectedSeries,
+              hoadon68_id: null,
+              inv_invoiceAuth_id: null,
+              khieu: selectedSeries,
+              shdon: number,
+              tthai: "",
+              status: isGetError ? "error" : "success",
+              updateStatus: "error",
+              updateError: msg,
+            });
+          }
+          setInvoiceList([...results]);
+        }
+
+        results.sort((a, b) => (a.number ?? 0) - (b.number ?? 0));
+        setInvoiceList([...results]);
+
+        const successCount = results.filter((r) => r.updateStatus === "success").length;
+        const failCount = results.length - successCount;
+        toast.info(
+          <ToastNotify status={0} message={`Cập nhật ma_thue=-2: ${successCount} thành công, ${failCount} thất bại (tổng ${results.length} hóa đơn).`} />,
+          { style: styleSuccess }
+        );
+      } catch (error) {
+        console.error("Error bulk set ma_thue=-2:", error);
+        toast.error(
+          <ToastNotify
+            status={1}
+            message={
+              error.response?.data?.message ||
+              error.message ||
+              "Lỗi khi cập nhật ma_thue=-2 cho hóa đơn hàng loạt"
+            }
+          />,
+          { style: styleError }
+        );
+      } finally {
+        setLoadingInvoices(false);
+      }
+    })();
+  };
+
   // Xoá chứng từ TNCN: GET danh sách id (phân trang) rồi gọi API delete-many (mỗi lần 50 id)
   const handleDeleteTncnVouchers = async (e) => {
     e.preventDefault();
@@ -2518,6 +2707,26 @@ const Support = () => {
                   {loadingInvoices
                     ? "Đang lấy và cập nhật ngày HĐ..."
                     : "Lấy từng HĐ và cập nhật ngày (Save API)"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleBulkSetMaThueMinus2}
+                  disabled={loadingInvoices}
+                  style={{
+                    padding: "10px 20px",
+                    backgroundColor: loadingInvoices ? "#ccc" : "#6f42c1",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "4px",
+                    fontSize: "14px",
+                    cursor: loadingInvoices ? "not-allowed" : "pointer",
+                    fontWeight: "bold",
+                  }}
+                >
+                  {loadingInvoices
+                    ? "Đang cập nhật ma_thue=-2..."
+                    : "Lấy từng HĐ và cập nhật ma_thue=-2"}
                 </button>
 
                 <button
