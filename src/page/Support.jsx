@@ -29,17 +29,48 @@ const SAVE_API_HEADERS = {
   "Sec-Fetch-Site": "same-site",
   "User-Agent":
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
-  "sec-ch-ua": '"Chromium";v="142", "Google Chrome";v="142", "Not_A Brand";v="99"',
+  "sec-ch-ua":
+    '"Chromium";v="142", "Google Chrome";v="142", "Not_A Brand";v="99"',
   "sec-ch-ua-mobile": "?0",
   "sec-ch-ua-platform": '"macOS"',
   Authorization: SAVE_API_AUTH,
 };
 
+const DEFAULT_INVOICE_API78_SERIES_AUTH =
+  "Bearer O87316arj5+Od3Fqyy5hzdBfIuPk73eKqpAzBSvv8sY=";
+
+/** Phản hồi InvoiceApi78 khi token hết hạn / sai. */
+function isInvoiceApi78TokenError(payload) {
+  const c = payload?.code;
+  return c === "3" || c === 3 || String(c) === "3";
+}
+
+/**
+ * Authorization cho GetTypeInvoiceSeries / GetInfoInvoice / Save.
+ * Có thể dán đủ "Bear ..." hoặc "Bearer ..." hoặc chỉ phần token (msupport LocalStorage).
+ */
+function invoiceApi78AuthorizationFromInput(
+  userToken,
+  { forSeries = false } = {},
+) {
+  const t = (userToken || "").trim();
+  if (!t) {
+    return forSeries ? DEFAULT_INVOICE_API78_SERIES_AUTH : SAVE_API_AUTH;
+  }
+  if (/^Bear\s+/i.test(t) || /^Bearer\s+/i.test(t)) return t;
+  return forSeries ? `Bearer ${t}` : `Bear ${t}`;
+}
+
+function buildSaveApiHeaders(authorization) {
+  return { ...SAVE_API_HEADERS, Authorization: authorization };
+}
+
 /** Đảm bảo giá trị luôn là mảng (JsonArray). */
 function ensureJsonArray(value) {
   if (value == null) return [];
   if (Array.isArray(value)) return value;
-  if (typeof value === "object" && !Array.isArray(value)) return Object.values(value);
+  if (typeof value === "object" && !Array.isArray(value))
+    return Object.values(value);
   return [];
 }
 
@@ -52,7 +83,11 @@ function buildDetailsForSave(invoice) {
   if (detailsRaw == null) return [{ data: [] }];
 
   // Trường hợp API trả về details = { data: [ dòng 1, dòng 2, ... ] }
-  if (typeof detailsRaw === "object" && !Array.isArray(detailsRaw) && "data" in detailsRaw) {
+  if (
+    typeof detailsRaw === "object" &&
+    !Array.isArray(detailsRaw) &&
+    "data" in detailsRaw
+  ) {
     const dataArray = ensureJsonArray(detailsRaw.data);
     return [{ data: dataArray }];
   }
@@ -60,10 +95,60 @@ function buildDetailsForSave(invoice) {
   // Trường hợp details là mảng tab [ { data: [...] }, ... ]
   const detailsArray = ensureJsonArray(detailsRaw);
   return detailsArray.map((tab) => {
-    const dataRaw = tab != null && typeof tab === "object" ? tab.data : undefined;
+    const dataRaw =
+      tab != null && typeof tab === "object" ? tab.data : undefined;
     const dataArray = ensureJsonArray(dataRaw);
     return { data: dataArray };
   });
+}
+
+function formatDateToDdMmYyyy(value) {
+  const raw = (value || "").toString().trim();
+  if (!raw) return "";
+
+  const datePart = raw.includes("T") ? raw.split("T")[0] : raw;
+  const m = datePart.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+
+  return raw;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function extractXsrfTokenFromCookieString(cookieString) {
+  const source = (cookieString || "").toString();
+  if (!source) return "";
+  const parts = source.split(";");
+  for (const part of parts) {
+    const trimmed = part.trim();
+    if (!trimmed) continue;
+    const [name, ...rest] = trimmed.split("=");
+    if ((name || "").trim() !== "XSRF-TOKEN") continue;
+    const raw = rest.join("=").trim();
+    try {
+      return decodeURIComponent(raw);
+    } catch {
+      return raw;
+    }
+  }
+  return "";
+}
+
+async function retryAxiosPost(url, data, config, maxAttempts = 3) {
+  let lastError;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await axios.post(url, data, config);
+    } catch (error) {
+      lastError = error;
+      if (attempt < maxAttempts) {
+        await sleep(500 * attempt);
+      }
+    }
+  }
+  throw lastError;
 }
 
 /**
@@ -71,13 +156,21 @@ function buildDetailsForSave(invoice) {
  * Cấu trúc details giống mẫu: [ { data: [ dòng 1, dòng 2, ... ] } ]. Chỉ đổi ngày.
  */
 function mapInvoiceToSaveData(invoice, newDateYyyyMmDd) {
-  const issued = (newDateYyyyMmDd || "").trim() || invoice.inv_invoiceIssuedDate || "";
+  const issued =
+    (newDateYyyyMmDd || "").trim() || invoice.inv_invoiceIssuedDate || "";
+  const displayFromGet = (invoice?.inv_buyerDisplayName ?? "").toString().trim();
+  const issuedDisplay = formatDateToDdMmYyyy(issued);
   const details = buildDetailsForSave(invoice);
   const mapped = {
     ...invoice,
     inv_invoiceIssuedDate: issued,
     details,
   };
+  if (displayFromGet) {
+    mapped.inv_buyerDisplayName = issuedDisplay
+      ? `${displayFromGet} ngày ${issuedDisplay}`
+      : displayFromGet;
+  }
   // Với dữ liệu tích hợp, backend Save có thể reject nếu giữ key_api = "TICH_HOP"
   if ((mapped.key_api || "").toString().trim().toUpperCase() === "TICH_HOP") {
     delete mapped.key_api;
@@ -109,33 +202,43 @@ const Support = () => {
   const [bulkFromNumber, setBulkFromNumber] = useState("");
   const [bulkToNumber, setBulkToNumber] = useState("");
   const [bulkNewDate, setBulkNewDate] = useState("");
+  /** Token InvoiceApi78 (Get ký hiệu / GetInfo / Save). Nhập khi API trả code 3 — token hết hạn. */
+  const [invoiceApi78Token, setInvoiceApi78Token] = useState("");
 
   // States for "Xoá chứng từ TNCN" tab (defaults theo curl mẫu bạn gửi)
   const [tncnTaxCode, setTncnTaxCode] = useState("0313364566");
   const [tncnVoucherSymbolId, setTncnVoucherSymbolId] = useState(
-    "3a1cf7e4-9de3-e97e-8b9f-ba83282dea11"
+    "3a1cf7e4-9de3-e97e-8b9f-ba83282dea11",
   );
   const [tncnBearerToken, setTncnBearerToken] = useState(
-    "eyJhbGciOiJSUzI1NiIsImtpZCI6IkRGREQyM0Y5NTM3RTQyQ0FCNUU5NDM1MDEzRTJBMzBFMzRCMjVCNEIiLCJ4NXQiOiIzOTBqLVZOLVFzcTE2VU5RRS1LakRqU3lXMHMiLCJ0eXAiOiJhdCtqd3QifQ.eyJpc3MiOiJodHRwczovL2xvY2FsaG9zdDo0NDM1My8iLCJleHAiOjE3NzI0NDc1NTksImlhdCI6MTc3MjQxODc1OSwiYXVkIjoiTWludm9pY2VBcGkiLCJzY29wZSI6Ik1pbnZvaWNlQXBpIiwianRpIjoiMzM0MzMxZjctNGQ3ZS00NDQzLWE3OTMtZDllYTI5ZTMwZWNkIiwic3ViIjoiM2ExY2Y3ZTQtOWMyYi02MTkwLWExYjUtYmQ5OWI5NDM2OTFmIiwicHJlZmVycmVkX3VzZXJuYW1lIjoiQWRtaW4iLCJlbWFpbCI6ImhpZW50dEBtaW52b2ljZS52biIsInJvbGUiOiJRdeG6o24gdHLhu4siLCJ0ZW5hbnRpZCI6IjNhMWNmN2U0LTlhZTktOGY2OS1mMjAxLTc1MzM0OGFhNDBiOCIsImdpdmVuX25hbWUiOiIwMzEzMzY0NTY2IiwicGhvbmVfbnVtYmVyX3ZlcmlmaWVkIjoiRmFsc2UiLCJlbWFpbF92ZXJpZmllZCI6IkZhbHNlIiwidW5pcXVlX25hbWUiOiJBZG1pbiIsIm9pX3Byc3QiOiJNaW52b2ljZUFwaV9BcHAiLCJjbGllbnRfaWQiOiJNaW52b2ljZUFwaV9BcHAiLCJvaV90a25faWQiOiIzYTFmYmU5MC1kNGY2LThmYzMtNGFmYS05ZDBkMTlhZTZlM2EifQ.mSHohXJLYmDk7zMCkZeStaCMftsq41LrEd53pwyJ03zWBaoXllNvfG2isX9H-TddauOIwPrH-c0BvjuIp6B9M0tFRzMiLHb1MPV5nGmbll-T5RUnczNYqN4hAUnf2Yvsue7aplUqyivqwIo4zQUNL0Ls1AsKl5_VAtznQGYT_hOCE9E8OcsJSOJJZoEF43v1pObH6M_iOxFJHsg-MeXTzd8yiNU0sEozx98w0K6kloJY9eeLBvzDRtKE9FO9myAFEMOONlVxwnumbB7L60aXNmNGS6FRyZPtzIcN9ESh_QcKlwHXjHf8l9ZsLe8bqn1C-IuHmnGowj8dJ_bOsd55uw"
+    "eyJhbGciOiJSUzI1NiIsImtpZCI6IkRGREQyM0Y5NTM3RTQyQ0FCNUU5NDM1MDEzRTJBMzBFMzRCMjVCNEIiLCJ4NXQiOiIzOTBqLVZOLVFzcTE2VU5RRS1LakRqU3lXMHMiLCJ0eXAiOiJhdCtqd3QifQ.eyJpc3MiOiJodHRwczovL2xvY2FsaG9zdDo0NDM1My8iLCJleHAiOjE3NzI0NDc1NTksImlhdCI6MTc3MjQxODc1OSwiYXVkIjoiTWludm9pY2VBcGkiLCJzY29wZSI6Ik1pbnZvaWNlQXBpIiwianRpIjoiMzM0MzMxZjctNGQ3ZS00NDQzLWE3OTMtZDllYTI5ZTMwZWNkIiwic3ViIjoiM2ExY2Y3ZTQtOWMyYi02MTkwLWExYjUtYmQ5OWI5NDM2OTFmIiwicHJlZmVycmVkX3VzZXJuYW1lIjoiQWRtaW4iLCJlbWFpbCI6ImhpZW50dEBtaW52b2ljZS52biIsInJvbGUiOiJRdeG6o24gdHLhu4siLCJ0ZW5hbnRpZCI6IjNhMWNmN2U0LTlhZTktOGY2OS1mMjAxLTc1MzM0OGFhNDBiOCIsImdpdmVuX25hbWUiOiIwMzEzMzY0NTY2IiwicGhvbmVfbnVtYmVyX3ZlcmlmaWVkIjoiRmFsc2UiLCJlbWFpbF92ZXJpZmllZCI6IkZhbHNlIiwidW5pcXVlX25hbWUiOiJBZG1pbiIsIm9pX3Byc3QiOiJNaW52b2ljZUFwaV9BcHAiLCJjbGllbnRfaWQiOiJNaW52b2ljZUFwaV9BcHAiLCJvaV90a25faWQiOiIzYTFmYmU5MC1kNGY2LThmYzMtNGFmYS05ZDBkMTlhZTZlM2EifQ.mSHohXJLYmDk7zMCkZeStaCMftsq41LrEd53pwyJ03zWBaoXllNvfG2isX9H-TddauOIwPrH-c0BvjuIp6B9M0tFRzMiLHb1MPV5nGmbll-T5RUnczNYqN4hAUnf2Yvsue7aplUqyivqwIo4zQUNL0Ls1AsKl5_VAtznQGYT_hOCE9E8OcsJSOJJZoEF43v1pObH6M_iOxFJHsg-MeXTzd8yiNU0sEozx98w0K6kloJY9eeLBvzDRtKE9FO9myAFEMOONlVxwnumbB7L60aXNmNGS6FRyZPtzIcN9ESh_QcKlwHXjHf8l9ZsLe8bqn1C-IuHmnGowj8dJ_bOsd55uw",
   );
   const [tncnRequestVerificationToken, setTncnRequestVerificationToken] =
     useState(
-      "CfDJ8EiX1iYPse5KlIhd39kSFE31NCzbrYB2_yZDifWvjJv37XkUaYHyCL_ULlLAA140b9dG0qmMgLV5CR_Fr2_PJ--q4pTJYiXRVhF-BHd8_ciZO1ofd3Jp1UIXMjx9UqU0lU3Lru7KnF3JPHFRA_08hrtSgSfk8TMLLwxDlr45DiORh-_JnQ63zsRaSNBGb_9Tjg"
+      "CfDJ8EiX1iYPse5KlIhd39kSFE31NCzbrYB2_yZDifWvjJv37XkUaYHyCL_ULlLAA140b9dG0qmMgLV5CR_Fr2_PJ--q4pTJYiXRVhF-BHd8_ciZO1ofd3Jp1UIXMjx9UqU0lU3Lru7KnF3JPHFRA_08hrtSgSfk8TMLLwxDlr45DiORh-_JnQ63zsRaSNBGb_9Tjg",
     );
   const [tncnLoading, setTncnLoading] = useState(false);
-  const [tncnLog, setTncnLog] = useState({ totalFetched: 0, deleteSuccess: 0, deleteFail: 0 });
+  const [tncnLog, setTncnLog] = useState({
+    totalFetched: 0,
+    deleteSuccess: 0,
+    deleteFail: 0,
+  });
 
   // States for "Kiểm tra đang gửi hàng loạt" tab
   const [checkTaxCode, setCheckTaxCode] = useState("");
   const [checkRegisterInvoiceId, setCheckRegisterInvoiceId] = useState("");
   const [checkRegisterList, setCheckRegisterList] = useState([]);
-  const [loadingCheckRegisterList, setLoadingCheckRegisterList] = useState(false);
+  const [loadingCheckRegisterList, setLoadingCheckRegisterList] =
+    useState(false);
   const [checkAccount20, setCheckAccount20] = useState(null);
   const [checkInvoiceList, setCheckInvoiceList] = useState([]);
   const [checkResults, setCheckResults] = useState([]);
   const [loadingCheckAccount, setLoadingCheckAccount] = useState(false);
   const [loadingCheckList, setLoadingCheckList] = useState(false);
   const [loadingCheckBatch, setLoadingCheckBatch] = useState(false);
+  const [bulkOriginalTaxCode, setBulkOriginalTaxCode] = useState("");
+  const [loadingBulkOriginal, setLoadingBulkOriginal] = useState(false);
+  const [bulkOriginalResults, setBulkOriginalResults] = useState([]);
 
   const domain = "http://bienlai70.vpdkddtphcm.com.vn";
 
@@ -146,7 +249,7 @@ const Support = () => {
         label: reg.name || String(reg.id),
         value: reg.id,
       })),
-    [checkRegisterList]
+    [checkRegisterList],
   );
 
   // Các trường cố định
@@ -162,6 +265,10 @@ const Support = () => {
 
   /** Trạng thái gửi CQT khi lấy danh sách kiểm tra hàng loạt: 2 (đã ký), 3 (đang gửi) — khớp filter trên web 2.0 */
   const CHECK_SENDING_TAX_STATUSES = "2,3";
+  const bulkOriginalLoginUrl = useMemo(() => {
+    const tax = (bulkOriginalTaxCode || "").trim().replace(/-/g, "");
+    return tax ? `https://${tax}.minvoice.net/#/` : "";
+  }, [bulkOriginalTaxCode]);
 
   useEffect(() => {
     document.title = "Cập nhật DB 2.0";
@@ -177,6 +284,8 @@ const Support = () => {
       setActiveTab("bulk-update-date");
     } else if (tab === "check-sending") {
       setActiveTab("check-sending");
+    } else if (tab === "bulk-update-original") {
+      setActiveTab("bulk-update-original");
     } else if (SHOW_TNCN_DELETE && tab === "delete-tncn") {
       setActiveTab("delete-tncn");
     }
@@ -185,11 +294,15 @@ const Support = () => {
   // Tự động gọi API khi nhập mã số thuế (với debounce)
   useEffect(() => {
     // Chỉ gọi khi đang ở tab "update-error" hoặc \"Cập nhật ngày HĐ hàng loạt\" và có mã số thuế hợp lệ
-    if (activeTab !== "update-error" && activeTab !== "bulk-update-date")
+    if (
+      activeTab !== "update-error" &&
+      activeTab !== "bulk-update-date" &&
+      activeTab !== "bulk-update-original"
+    )
       return;
-    
+
     const trimmedTaxCode = taxCode.trim();
-    
+
     // Chỉ gọi khi mã số thuế có ít nhất 5 ký tự
     if (trimmedTaxCode.length < 5) {
       setSeriesList([]);
@@ -260,7 +373,7 @@ const Support = () => {
       if (!isAutoCall) {
         toast.error(
           <ToastNotify status={1} message="Vui lòng nhập mã số thuế" />,
-          { style: styleError }
+          { style: styleError },
         );
       }
       return;
@@ -271,11 +384,15 @@ const Support = () => {
     setSelectedSeries("");
 
     // Kiểm tra nếu mã số thuế kết thúc bằng -998 thì dùng .site, ngược lại dùng .app
-    const domain = taxCode.endsWith("-998") ? ".minvoice.site" : ".minvoice.app";
+    const domain = taxCode.endsWith("-998")
+      ? ".minvoice.site"
+      : ".minvoice.app";
     const url = `https://${taxCode}${domain}/api/InvoiceApi78/GetTypeInvoiceSeries`;
 
     const headers = {
-      Authorization: "Bearer O87316arj5+Od3Fqyy5hzdBfIuPk73eKqpAzBSvv8sY=",
+      Authorization: invoiceApi78AuthorizationFromInput(invoiceApi78Token, {
+        forSeries: true,
+      }),
       "Content-Type": "application/json",
     };
 
@@ -290,34 +407,46 @@ const Support = () => {
               status={0}
               message={`Tìm thấy ${response.data.data.length} ký hiệu`}
             />,
-            { style: styleSuccess }
+            { style: styleSuccess },
           );
         } else {
           toast.warning(
             <ToastNotify status={1} message="Không tìm thấy ký hiệu nào" />,
-            { style: styleError }
+            { style: styleError },
           );
         }
       } else {
-        throw new Error(
-          response?.data?.message || "Không thể lấy danh sách ký hiệu"
-        );
+        const payload = response?.data;
+        if (isInvoiceApi78TokenError(payload)) {
+          toast.error(
+            <ToastNotify
+              status={1}
+              message={`${payload?.message || "Token hết hạn hoặc không đúng"}. Nhập Token InvoiceApi78 (ô bên dưới mã số thuế / tab cập nhật hàng loạt) rồi thử lại.`}
+            />,
+            { style: styleError },
+          );
+        }
+        throw new Error(payload?.message || "Không thể lấy danh sách ký hiệu");
       }
     } catch (error) {
       console.error("Error fetching series:", error.message);
       if (error.response) {
         console.error("Response error:", error.response.data);
       }
+      const errData = error.response?.data;
+      const tokenHint = isInvoiceApi78TokenError(errData)
+        ? " Nhập Token InvoiceApi78 (ô bên dưới) rồi thử lại."
+        : "";
       toast.error(
         <ToastNotify
           status={1}
           message={
-            error.response?.data?.message ||
-            error.message ||
-            "Lỗi khi lấy danh sách ký hiệu"
+            (errData?.message ||
+              error.message ||
+              "Lỗi khi lấy danh sách ký hiệu") + tokenHint
           }
         />,
-        { style: styleError }
+        { style: styleError },
       );
       setSeriesList([]);
     } finally {
@@ -330,32 +459,30 @@ const Support = () => {
     if (!taxCode.trim()) {
       toast.error(
         <ToastNotify status={1} message="Vui lòng nhập mã số thuế" />,
-        { style: styleError }
+        { style: styleError },
       );
       return;
     }
 
     if (!selectedSeries) {
-      toast.error(
-        <ToastNotify status={1} message="Vui lòng chọn ký hiệu" />,
-        { style: styleError }
-      );
+      toast.error(<ToastNotify status={1} message="Vui lòng chọn ký hiệu" />, {
+        style: styleError,
+      });
       return;
     }
 
     if (!tuSo.trim() || !denSo.trim()) {
       toast.error(
         <ToastNotify status={1} message="Vui lòng nhập từ số và đến số" />,
-        { style: styleError }
+        { style: styleError },
       );
       return;
     }
 
     if (!token.trim()) {
-      toast.error(
-        <ToastNotify status={1} message="Vui lòng nhập token" />,
-        { style: styleError }
-      );
+      toast.error(<ToastNotify status={1} message="Vui lòng nhập token" />, {
+        style: styleError,
+      });
       return;
     }
 
@@ -364,8 +491,11 @@ const Support = () => {
 
     if (isNaN(tuSoNum) || isNaN(denSoNum) || tuSoNum > denSoNum) {
       toast.error(
-        <ToastNotify status={1} message="Số hóa đơn không hợp lệ. Từ số phải nhỏ hơn hoặc bằng đến số" />,
-        { style: styleError }
+        <ToastNotify
+          status={1}
+          message="Số hóa đơn không hợp lệ. Từ số phải nhỏ hơn hoặc bằng đến số"
+        />,
+        { style: styleError },
       );
       return;
     }
@@ -374,7 +504,9 @@ const Support = () => {
     setInvoiceList([]);
 
     // Kiểm tra nếu mã số thuế kết thúc bằng -998 thì dùng .site, ngược lại dùng .app
-    const domain = taxCode.endsWith("-998") ? ".minvoice.site" : ".minvoice.app";
+    const domain = taxCode.endsWith("-998")
+      ? ".minvoice.site"
+      : ".minvoice.app";
     const baseUrl = `https://${taxCode}${domain}/api/InvoiceApi78/GetInfoInvoice`;
 
     const getInvoiceHeaders = {
@@ -398,19 +530,24 @@ const Support = () => {
       // Lặp qua từng số hóa đơn từ tuSo đến denSo
       for (let number = tuSoNum; number <= denSoNum; number++) {
         const url = `${baseUrl}?number=${number}&seri=${selectedSeries}`;
-        
+
         try {
           // Bước 1: Lấy thông tin hóa đơn
           const response = await axios.get(url, { headers: getInvoiceHeaders });
-          
-          if (response?.data && response.data.code === "00" && response.data.data) {
+
+          if (
+            response?.data &&
+            response.data.code === "00" &&
+            response.data.data
+          ) {
             const invoice = response.data.data;
             const tthai = invoice.tthai || "";
-            
+
             // Chỉ xử lý hóa đơn có trạng thái "Chờ ký"
             if (tthai === "Chờ ký") {
-              const invoiceId = invoice.inv_invoiceAuth_id || invoice.hoadon68_id;
-              
+              const invoiceId =
+                invoice.inv_invoiceAuth_id || invoice.hoadon68_id;
+
               if (invoiceId) {
                 // Bước 2: Cập nhật hóa đơn qua API n8n
                 try {
@@ -421,7 +558,11 @@ const Support = () => {
                     Id: invoiceId,
                   };
 
-                  const updateResponse = await axios.post(updateUrl, updateBody, { headers: updateHeaders });
+                  const updateResponse = await axios.post(
+                    updateUrl,
+                    updateBody,
+                    { headers: updateHeaders },
+                  );
 
                   if (updateResponse?.data) {
                     results.push({
@@ -429,8 +570,12 @@ const Support = () => {
                       seri: selectedSeries,
                       hoadon68_id: invoice.hoadon68_id,
                       inv_invoiceAuth_id: invoice.inv_invoiceAuth_id,
-                      khieu: invoice.inv_invoiceSeries || invoice.khieu || selectedSeries,
-                      shdon: invoice.inv_invoiceNumber || invoice.shdon || number,
+                      khieu:
+                        invoice.inv_invoiceSeries ||
+                        invoice.khieu ||
+                        selectedSeries,
+                      shdon:
+                        invoice.inv_invoiceNumber || invoice.shdon || number,
                       tthai: tthai,
                       status: "success",
                       updateStatus: "success",
@@ -445,12 +590,18 @@ const Support = () => {
                     seri: selectedSeries,
                     hoadon68_id: invoice.hoadon68_id,
                     inv_invoiceAuth_id: invoice.inv_invoiceAuth_id,
-                    khieu: invoice.inv_invoiceSeries || invoice.khieu || selectedSeries,
+                    khieu:
+                      invoice.inv_invoiceSeries ||
+                      invoice.khieu ||
+                      selectedSeries,
                     shdon: invoice.inv_invoiceNumber || invoice.shdon || number,
                     tthai: tthai,
                     status: "success",
                     updateStatus: "error",
-                    updateError: updateError.response?.data?.message || updateError.message || "Lỗi khi cập nhật",
+                    updateError:
+                      updateError.response?.data?.message ||
+                      updateError.message ||
+                      "Lỗi khi cập nhật",
                   });
                   updateErrorCount++;
                 }
@@ -460,7 +611,10 @@ const Support = () => {
                   seri: selectedSeries,
                   hoadon68_id: invoice.hoadon68_id,
                   inv_invoiceAuth_id: null,
-                  khieu: invoice.inv_invoiceSeries || invoice.khieu || selectedSeries,
+                  khieu:
+                    invoice.inv_invoiceSeries ||
+                    invoice.khieu ||
+                    selectedSeries,
                   shdon: invoice.inv_invoiceNumber || invoice.shdon || number,
                   tthai: tthai,
                   status: "success",
@@ -484,7 +638,10 @@ const Support = () => {
             tthai: "Lỗi",
             status: "error",
             updateStatus: "error",
-            updateError: error.response?.data?.message || error.message || "Lỗi khi lấy thông tin",
+            updateError:
+              error.response?.data?.message ||
+              error.message ||
+              "Lỗi khi lấy thông tin",
           });
         }
 
@@ -504,7 +661,7 @@ const Support = () => {
               status={0}
               message={`Đã cập nhật thành công ${updateSuccessCount}/${total} hóa đơn trong khoảng ${tuSo} - ${denSo}`}
             />,
-            { style: styleSuccess }
+            { style: styleSuccess },
           );
         }
         if (updateErrorCount > 0) {
@@ -513,13 +670,16 @@ const Support = () => {
               status={1}
               message={`Có ${updateErrorCount}/${total} hóa đơn cập nhật thất bại trong khoảng ${tuSo} - ${denSo}`}
             />,
-            { style: styleError }
+            { style: styleError },
           );
         }
       } else {
         toast.warning(
-          <ToastNotify status={1} message={`Không tìm thấy hóa đơn "Chờ ký" nào trong khoảng ${tuSo} - ${denSo} (${total} hóa đơn đã kiểm tra)`} />,
-          { style: styleError }
+          <ToastNotify
+            status={1}
+            message={`Không tìm thấy hóa đơn "Chờ ký" nào trong khoảng ${tuSo} - ${denSo} (${total} hóa đơn đã kiểm tra)`}
+          />,
+          { style: styleError },
         );
       }
     } catch (error) {
@@ -533,7 +693,7 @@ const Support = () => {
             "Lỗi khi cập nhật hóa đơn"
           }
         />,
-        { style: styleError }
+        { style: styleError },
       );
     } finally {
       setLoadingInvoices(false);
@@ -547,7 +707,7 @@ const Support = () => {
     if (!bulkTaxCode.trim()) {
       toast.error(
         <ToastNotify status={1} message="Vui lòng nhập mã số thuế" />,
-        { style: styleError }
+        { style: styleError },
       );
       return;
     }
@@ -557,7 +717,7 @@ const Support = () => {
           status={1}
           message="Vui lòng nhập khoảng số hóa đơn (từ số, đến số)"
         />,
-        { style: styleError }
+        { style: styleError },
       );
       return;
     }
@@ -569,14 +729,14 @@ const Support = () => {
           status={1}
           message="Khoảng số hóa đơn không hợp lệ. Từ số phải nhỏ hơn hoặc bằng đến số."
         />,
-        { style: styleError }
+        { style: styleError },
       );
       return;
     }
     if (!bulkNewDate) {
       toast.error(
         <ToastNotify status={1} message="Vui lòng chọn ngày hóa đơn mới" />,
-        { style: styleError }
+        { style: styleError },
       );
       return;
     }
@@ -593,10 +753,15 @@ const Support = () => {
         const getInfoUrl = `${baseUrl}/api/InvoiceApi78/GetInfoInvoice`;
         const saveUrl = `${baseUrl}/api/InvoiceApi78/Save`;
 
+        const authHeader = invoiceApi78AuthorizationFromInput(
+          invoiceApi78Token,
+          { forSeries: false },
+        );
         const getInvoiceHeaders = {
           "Content-Type": "application/json",
-          Authorization: SAVE_API_AUTH,
+          Authorization: authHeader,
         };
+        const saveHeaders = buildSaveApiHeaders(authHeader);
 
         const results = [];
 
@@ -613,6 +778,10 @@ const Support = () => {
               response.data.code !== "00" ||
               !response.data.data
             ) {
+              const p = response?.data;
+              const tokenHint = isInvoiceApi78TokenError(p)
+                ? " Token hết hạn — nhập Token InvoiceApi78 rồi chạy lại."
+                : "";
               results.push({
                 number,
                 seri: selectedSeries,
@@ -623,7 +792,8 @@ const Support = () => {
                 tthai: "",
                 status: "error",
                 updateStatus: "error",
-                updateError: response?.data?.message || "Không lấy được thông tin HĐ",
+                updateError:
+                  (p?.message || "Không lấy được thông tin HĐ") + tokenHint,
               });
               setInvoiceList([...results]);
               continue;
@@ -639,7 +809,7 @@ const Support = () => {
             };
 
             await axios.post(saveUrl, savePayload, {
-              headers: SAVE_API_HEADERS,
+              headers: saveHeaders,
             });
 
             results.push({
@@ -647,19 +817,25 @@ const Support = () => {
               seri: selectedSeries,
               hoadon68_id: invoice.hoadon68_id,
               inv_invoiceAuth_id: invoice.inv_invoiceAuth_id,
-              khieu: invoice.inv_invoiceSeries || invoice.khieu || selectedSeries,
+              khieu:
+                invoice.inv_invoiceSeries || invoice.khieu || selectedSeries,
               shdon: invoice.inv_invoiceNumber || invoice.shdon || number,
               tthai: invoice.tthai || "",
               status: "success",
               updateStatus: "success",
             });
           } catch (err) {
-            const isGetError = !err.config?.method || err.config.method.toLowerCase() === "get";
+            const isGetError =
+              !err.config?.method || err.config.method.toLowerCase() === "get";
+            const errData = err?.response?.data;
+            const tokenHint = isInvoiceApi78TokenError(errData)
+              ? " Token hết hạn — nhập Token InvoiceApi78 rồi chạy lại."
+              : "";
             const msg =
-              err?.response?.data?.message ||
-              err?.response?.data?.Message ||
-              err?.message ||
-              "Lỗi không xác định";
+              (errData?.message ||
+                errData?.Message ||
+                err?.message ||
+                "Lỗi không xác định") + tokenHint;
             results.push({
               number,
               seri: selectedSeries,
@@ -680,14 +856,16 @@ const Support = () => {
         results.sort((a, b) => (a.number ?? 0) - (b.number ?? 0));
         setInvoiceList([...results]);
 
-        const successCount = results.filter((r) => r.updateStatus === "success").length;
+        const successCount = results.filter(
+          (r) => r.updateStatus === "success",
+        ).length;
         const failCount = results.length - successCount;
         toast.info(
           <ToastNotify
             status={0}
             message={`Cập nhật ngày HĐ: ${successCount} thành công, ${failCount} thất bại (tổng ${results.length} hóa đơn).`}
           />,
-          { style: styleSuccess }
+          { style: styleSuccess },
         );
       } catch (error) {
         console.error("Error bulk update invoice dates:", error);
@@ -700,7 +878,7 @@ const Support = () => {
               "Lỗi khi cập nhật ngày hóa đơn hàng loạt"
             }
           />,
-          { style: styleError }
+          { style: styleError },
         );
       } finally {
         setLoadingInvoices(false);
@@ -713,17 +891,25 @@ const Support = () => {
   const handleBulkSetMaThueMinus2 = async () => {
     // Validate basic input
     if (!bulkTaxCode.trim()) {
-      toast.error(<ToastNotify status={1} message="Vui lòng nhập mã số thuế" />, { style: styleError });
+      toast.error(
+        <ToastNotify status={1} message="Vui lòng nhập mã số thuế" />,
+        { style: styleError },
+      );
       return;
     }
     if (!selectedSeries) {
-      toast.error(<ToastNotify status={1} message="Vui lòng chọn ký hiệu" />, { style: styleError });
+      toast.error(<ToastNotify status={1} message="Vui lòng chọn ký hiệu" />, {
+        style: styleError,
+      });
       return;
     }
     if (!bulkFromNumber.trim() || !bulkToNumber.trim()) {
       toast.error(
-        <ToastNotify status={1} message="Vui lòng nhập khoảng số hóa đơn (từ số, đến số)" />,
-        { style: styleError }
+        <ToastNotify
+          status={1}
+          message="Vui lòng nhập khoảng số hóa đơn (từ số, đến số)"
+        />,
+        { style: styleError },
       );
       return;
     }
@@ -731,8 +917,11 @@ const Support = () => {
     const toNum = parseInt(bulkToNumber, 10);
     if (isNaN(fromNum) || isNaN(toNum) || fromNum > toNum) {
       toast.error(
-        <ToastNotify status={1} message="Khoảng số hóa đơn không hợp lệ. Từ số phải nhỏ hơn hoặc bằng đến số." />,
-        { style: styleError }
+        <ToastNotify
+          status={1}
+          message="Khoảng số hóa đơn không hợp lệ. Từ số phải nhỏ hơn hoặc bằng đến số."
+        />,
+        { style: styleError },
       );
       return;
     }
@@ -742,15 +931,22 @@ const Support = () => {
 
     (async () => {
       try {
-        const domainSuffix = bulkTaxCode.endsWith("-998") ? ".minvoice.site" : ".minvoice.app";
+        const domainSuffix = bulkTaxCode.endsWith("-998")
+          ? ".minvoice.site"
+          : ".minvoice.app";
         const baseUrl = `https://${bulkTaxCode}${domainSuffix}`;
         const getInfoUrl = `${baseUrl}/api/InvoiceApi78/GetInfoInvoice`;
         const saveUrl = `${baseUrl}/api/InvoiceApi78/Save`;
 
+        const authHeader = invoiceApi78AuthorizationFromInput(
+          invoiceApi78Token,
+          { forSeries: false },
+        );
         const getInvoiceHeaders = {
           "Content-Type": "application/json",
-          Authorization: SAVE_API_AUTH,
+          Authorization: authHeader,
         };
+        const saveHeaders = buildSaveApiHeaders(authHeader);
 
         const results = [];
 
@@ -762,7 +958,15 @@ const Support = () => {
               headers: getInvoiceHeaders,
             });
 
-            if (!response?.data || response.data.code !== "00" || !response.data.data) {
+            if (
+              !response?.data ||
+              response.data.code !== "00" ||
+              !response.data.data
+            ) {
+              const p = response?.data;
+              const tokenHint = isInvoiceApi78TokenError(p)
+                ? " Token hết hạn — nhập Token InvoiceApi78 rồi chạy lại."
+                : "";
               results.push({
                 number,
                 seri: selectedSeries,
@@ -773,7 +977,8 @@ const Support = () => {
                 tthai: "",
                 status: "error",
                 updateStatus: "error",
-                updateError: response?.data?.message || "Không lấy được thông tin HĐ",
+                updateError:
+                  (p?.message || "Không lấy được thông tin HĐ") + tokenHint,
               });
               setInvoiceList([...results]);
               continue;
@@ -789,8 +994,12 @@ const Support = () => {
             // - inv_unitPrice đổi sang giá đã gồm thuế cũ: round(unitPrice * (1 + ma_thue_cu/100))
             saveDataItem.ma_thue = -2;
             saveDataItem.inv_vatAmount = 0;
-            if (saveDataItem.inv_TotalAmount != null && saveDataItem.inv_TotalAmount !== "") {
-              saveDataItem.inv_TotalAmountWithoutVat = saveDataItem.inv_TotalAmount;
+            if (
+              saveDataItem.inv_TotalAmount != null &&
+              saveDataItem.inv_TotalAmount !== ""
+            ) {
+              saveDataItem.inv_TotalAmountWithoutVat =
+                saveDataItem.inv_TotalAmount;
             }
             // Bỏ các trường tổng hợp để backend tự tính lại, tránh lệch số khi đổi ma_thue.
             delete saveDataItem.tgtcthue;
@@ -812,14 +1021,21 @@ const Support = () => {
                     oldTaxRateNum > 0 &&
                     Number.isFinite(oldUnitPriceNum)
                   ) {
-                    row.inv_unitPrice = Math.round(oldUnitPriceNum * (1 + oldTaxRateNum / 100));
+                    row.inv_unitPrice = Math.round(
+                      oldUnitPriceNum * (1 + oldTaxRateNum / 100),
+                    );
                   }
 
                   // Không thuế => tiền trước thuế chính là tổng tiền
                   if (Number.isFinite(totalAmountNum)) {
                     row.inv_TotalAmountWithoutVat = totalAmountNum;
-                  } else if (Number.isFinite(quantityNum) && Number.isFinite(Number(row.inv_unitPrice))) {
-                    row.inv_TotalAmountWithoutVat = Math.round(quantityNum * Number(row.inv_unitPrice));
+                  } else if (
+                    Number.isFinite(quantityNum) &&
+                    Number.isFinite(Number(row.inv_unitPrice))
+                  ) {
+                    row.inv_TotalAmountWithoutVat = Math.round(
+                      quantityNum * Number(row.inv_unitPrice),
+                    );
                   }
 
                   row.ma_thue = -2;
@@ -833,26 +1049,32 @@ const Support = () => {
               data: [saveDataItem],
             };
 
-            await axios.post(saveUrl, savePayload, { headers: SAVE_API_HEADERS });
+            await axios.post(saveUrl, savePayload, { headers: saveHeaders });
 
             results.push({
               number,
               seri: selectedSeries,
               hoadon68_id: invoice.hoadon68_id,
               inv_invoiceAuth_id: invoice.inv_invoiceAuth_id,
-              khieu: invoice.inv_invoiceSeries || invoice.khieu || selectedSeries,
+              khieu:
+                invoice.inv_invoiceSeries || invoice.khieu || selectedSeries,
               shdon: invoice.inv_invoiceNumber || invoice.shdon || number,
               tthai: invoice.tthai || "",
               status: "success",
               updateStatus: "success",
             });
           } catch (err) {
-            const isGetError = !err.config?.method || err.config.method.toLowerCase() === "get";
+            const isGetError =
+              !err.config?.method || err.config.method.toLowerCase() === "get";
+            const errData = err?.response?.data;
+            const tokenHint = isInvoiceApi78TokenError(errData)
+              ? " Token hết hạn — nhập Token InvoiceApi78 rồi chạy lại."
+              : "";
             const msg =
-              err?.response?.data?.message ||
-              err?.response?.data?.Message ||
-              err?.message ||
-              "Lỗi không xác định";
+              (errData?.message ||
+                errData?.Message ||
+                err?.message ||
+                "Lỗi không xác định") + tokenHint;
             results.push({
               number,
               seri: selectedSeries,
@@ -872,11 +1094,16 @@ const Support = () => {
         results.sort((a, b) => (a.number ?? 0) - (b.number ?? 0));
         setInvoiceList([...results]);
 
-        const successCount = results.filter((r) => r.updateStatus === "success").length;
+        const successCount = results.filter(
+          (r) => r.updateStatus === "success",
+        ).length;
         const failCount = results.length - successCount;
         toast.info(
-          <ToastNotify status={0} message={`Cập nhật ma_thue=-2: ${successCount} thành công, ${failCount} thất bại (tổng ${results.length} hóa đơn).`} />,
-          { style: styleSuccess }
+          <ToastNotify
+            status={0}
+            message={`Cập nhật ma_thue=-2: ${successCount} thành công, ${failCount} thất bại (tổng ${results.length} hóa đơn).`}
+          />,
+          { style: styleSuccess },
         );
       } catch (error) {
         console.error("Error bulk set ma_thue=-2:", error);
@@ -889,7 +1116,7 @@ const Support = () => {
               "Lỗi khi cập nhật ma_thue=-2 cho hóa đơn hàng loạt"
             }
           />,
-          { style: styleError }
+          { style: styleError },
         );
       } finally {
         setLoadingInvoices(false);
@@ -907,8 +1134,11 @@ const Support = () => {
 
     if (!tax || !symbolId || !bearer || !xsrf) {
       toast.error(
-        <ToastNotify status={1} message="Vui lòng nhập đủ: Mã số thuế, Voucher Symbol ID, Bearer token, RequestVerificationToken" />,
-        { style: styleError }
+        <ToastNotify
+          status={1}
+          message="Vui lòng nhập đủ: Mã số thuế, Voucher Symbol ID, Bearer token, RequestVerificationToken"
+        />,
+        { style: styleError },
       );
       return;
     }
@@ -921,7 +1151,8 @@ const Support = () => {
     const deleteManyBatchSize = 50;
     const headers = {
       Accept: "application/json, text/plain, */*",
-      "Accept-Language": "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7,fr-FR;q=0.6,fr;q=0.5",
+      "Accept-Language":
+        "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7,fr-FR;q=0.6,fr;q=0.5",
       Authorization: bearer.startsWith("Bearer ") ? bearer : `Bearer ${bearer}`,
       "Cache-Control": "no-cache",
       Connection: "keep-alive",
@@ -932,7 +1163,8 @@ const Support = () => {
       "Sec-Fetch-Dest": "empty",
       "Sec-Fetch-Mode": "cors",
       "Sec-Fetch-Site": "same-origin",
-      "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
+      "User-Agent":
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
       __tenant: tax,
       Origin: baseUrl,
     };
@@ -944,7 +1176,11 @@ const Support = () => {
       // GET danh sách chứng từ đến khi hết (skipCount tăng 300 mỗi lần)
       while (true) {
         const res = await axios.get(`${baseUrl}/api/app/voucher`, {
-          params: { maxResultCount: pageSize, skipCount, voucherSymbolId: symbolId },
+          params: {
+            maxResultCount: pageSize,
+            skipCount,
+            voucherSymbolId: symbolId,
+          },
           headers,
         });
         const totalCount = res?.data?.totalCount ?? 0;
@@ -953,14 +1189,19 @@ const Support = () => {
           if (item.id) allIds.push(item.id);
         });
         setTncnLog((prev) => ({ ...prev, totalFetched: allIds.length }));
-        if (items.length === 0 || items.length < pageSize || allIds.length >= totalCount) break;
+        if (
+          items.length === 0 ||
+          items.length < pageSize ||
+          allIds.length >= totalCount
+        )
+          break;
         skipCount += pageSize;
       }
 
       if (allIds.length === 0) {
         toast.info(
           <ToastNotify status={0} message="Không có chứng từ nào để xoá." />,
-          { style: styleSuccess }
+          { style: styleSuccess },
         );
         setTncnLoading(false);
         return;
@@ -982,7 +1223,7 @@ const Support = () => {
           console.error(
             "delete-many batch failed:",
             chunk.length,
-            err?.response?.data || err.message
+            err?.response?.data || err.message,
           );
         }
         setTncnLog({ totalFetched: allIds.length, deleteSuccess, deleteFail });
@@ -996,16 +1237,20 @@ const Support = () => {
           status={0}
           message={`Xoá chứng từ TNCN: ${deleteSuccess} thành công, ${deleteFail} thất bại (tổng ${allIds.length} bản ghi, gửi mỗi lần 50 id).`}
         />,
-        { style: styleSuccess }
+        { style: styleSuccess },
       );
     } catch (error) {
       console.error("Error TNCN delete flow:", error);
       toast.error(
         <ToastNotify
           status={1}
-          message={error?.response?.data?.message || error?.message || "Lỗi khi lấy danh sách hoặc xoá chứng từ TNCN"}
+          message={
+            error?.response?.data?.message ||
+            error?.message ||
+            "Lỗi khi lấy danh sách hoặc xoá chứng từ TNCN"
+          }
         />,
-        { style: styleError }
+        { style: styleError },
       );
     } finally {
       setTncnLoading(false);
@@ -1018,15 +1263,14 @@ const Support = () => {
     if (!bulkTaxCode.trim()) {
       toast.error(
         <ToastNotify status={1} message="Vui lòng nhập mã số thuế" />,
-        { style: styleError }
+        { style: styleError },
       );
       return;
     }
     if (!selectedSeries) {
-      toast.error(
-        <ToastNotify status={1} message="Vui lòng chọn ký hiệu" />,
-        { style: styleError }
-      );
+      toast.error(<ToastNotify status={1} message="Vui lòng chọn ký hiệu" />, {
+        style: styleError,
+      });
       return;
     }
     if (!bulkFromNumber.trim() || !bulkToNumber.trim()) {
@@ -1035,7 +1279,7 @@ const Support = () => {
           status={1}
           message="Vui lòng nhập khoảng số hóa đơn (từ số, đến số)"
         />,
-        { style: styleError }
+        { style: styleError },
       );
       return;
     }
@@ -1047,7 +1291,7 @@ const Support = () => {
           status={1}
           message="Khoảng số hóa đơn không hợp lệ. Từ số phải nhỏ hơn hoặc bằng đến số."
         />,
-        { style: styleError }
+        { style: styleError },
       );
       return;
     }
@@ -1063,10 +1307,14 @@ const Support = () => {
       const getInfoUrl = `${baseUrl}/api/InvoiceApi78/GetInfoInvoice`;
       const saveUrl = `${baseUrl}/api/InvoiceApi78/Save`;
 
+      const authHeader = invoiceApi78AuthorizationFromInput(invoiceApi78Token, {
+        forSeries: false,
+      });
       const getInvoiceHeaders = {
         "Content-Type": "application/json",
-        Authorization: SAVE_API_AUTH,
+        Authorization: authHeader,
       };
+      const saveHeaders = buildSaveApiHeaders(authHeader);
 
       const results = [];
       const todayStr = new Date().toISOString().slice(0, 10);
@@ -1084,6 +1332,10 @@ const Support = () => {
             response.data.code !== "00" ||
             !response.data.data
           ) {
+            const p = response?.data;
+            const tokenHint = isInvoiceApi78TokenError(p)
+              ? " Token hết hạn — nhập Token InvoiceApi78 rồi chạy lại."
+              : "";
             results.push({
               number,
               seri: selectedSeries,
@@ -1095,7 +1347,8 @@ const Support = () => {
               status: "error",
               updateStatus: "error",
               updateError:
-                response?.data?.message || "Không lấy được thông tin HĐ để tạo mới",
+                (p?.message || "Không lấy được thông tin HĐ để tạo mới") +
+                tokenHint,
             });
             setInvoiceList([...results]);
             continue;
@@ -1103,7 +1356,11 @@ const Support = () => {
 
           const invoice = response.data.data;
           // Chỉ tạo mới khi đủ một trong hai: trang_thai = 5 HOẶC tthai = "Chờ ký"
-          const statusText = (invoice.tthai || invoice.trang_thai_text || "").trim();
+          const statusText = (
+            invoice.tthai ||
+            invoice.trang_thai_text ||
+            ""
+          ).trim();
           const rawTrangThai = invoice.trang_thai;
           const trangThaiNum =
             typeof rawTrangThai === "number" && !Number.isNaN(rawTrangThai)
@@ -1111,21 +1368,23 @@ const Support = () => {
               : rawTrangThai != null && String(rawTrangThai).trim() !== ""
                 ? parseInt(String(rawTrangThai).trim(), 10)
                 : NaN;
-          const isChoKy =
-            trangThaiNum === 5 || statusText === "Chờ ký";
+          const isChoKy = trangThaiNum === 5 || statusText === "Chờ ký";
           if (!isChoKy) {
             results.push({
               number,
               seri: selectedSeries,
               hoadon68_id: invoice.hoadon68_id,
               inv_invoiceAuth_id: invoice.inv_invoiceAuth_id,
-              khieu: invoice.inv_invoiceSeries || invoice.khieu || selectedSeries,
+              khieu:
+                invoice.inv_invoiceSeries || invoice.khieu || selectedSeries,
               shdon: invoice.inv_invoiceNumber || invoice.shdon || number,
-              tthai: statusText || (Number.isNaN(trangThaiNum) ? "" : String(trangThaiNum)),
+              tthai:
+                statusText ||
+                (Number.isNaN(trangThaiNum) ? "" : String(trangThaiNum)),
               status: "skipped",
               updateStatus: "skipped",
               updateError:
-                "Bỏ qua: chỉ tạo mới khi trang_thai = 5 hoặc tthai = \"Chờ ký\"",
+                'Bỏ qua: chỉ tạo mới khi trang_thai = 5 hoặc tthai = "Chờ ký"',
             });
             setInvoiceList([...results]);
             continue;
@@ -1142,7 +1401,7 @@ const Support = () => {
           };
 
           await axios.post(saveUrl, savePayload, {
-            headers: SAVE_API_HEADERS,
+            headers: saveHeaders,
           });
 
           results.push({
@@ -1157,11 +1416,15 @@ const Support = () => {
             updateStatus: "success",
           });
         } catch (err) {
+          const errData = err?.response?.data;
+          const tokenHint = isInvoiceApi78TokenError(errData)
+            ? " Token hết hạn — nhập Token InvoiceApi78 rồi chạy lại."
+            : "";
           const message =
-            err?.response?.data?.message ||
-            err?.response?.data?.Message ||
-            err?.message ||
-            "Lỗi không xác định khi tạo mới hóa đơn";
+            (errData?.message ||
+              errData?.Message ||
+              err?.message ||
+              "Lỗi không xác định khi tạo mới hóa đơn") + tokenHint;
           results.push({
             number,
             seri: selectedSeries,
@@ -1182,14 +1445,18 @@ const Support = () => {
       results.sort((a, b) => (a.number ?? 0) - (b.number ?? 0));
       setInvoiceList([...results]);
 
-      const successCount = results.filter((r) => r.updateStatus === "success").length;
-      const failCount = results.filter((r) => r.updateStatus !== "success").length;
+      const successCount = results.filter(
+        (r) => r.updateStatus === "success",
+      ).length;
+      const failCount = results.filter(
+        (r) => r.updateStatus !== "success",
+      ).length;
       toast.info(
         <ToastNotify
           status={0}
           message={`Tạo mới hóa đơn: ${successCount} thành công, ${failCount} thất bại`}
         />,
-        { style: styleSuccess }
+        { style: styleSuccess },
       );
     } catch (error) {
       console.error("Lỗi khi tạo hóa đơn hàng loạt:", error);
@@ -1198,10 +1465,9 @@ const Support = () => {
         error?.response?.data?.Message ||
         error?.message ||
         "Lỗi không xác định khi tạo hóa đơn hàng loạt";
-      toast.error(
-        <ToastNotify status={1} message={message} />,
-        { style: styleError }
-      );
+      toast.error(<ToastNotify status={1} message={message} />, {
+        style: styleError,
+      });
     } finally {
       setLoadingInvoices(false);
     }
@@ -1213,7 +1479,7 @@ const Support = () => {
     if (!khhdonList.trim()) {
       toast.error(
         <ToastNotify status={1} message="Vui lòng nhập danh sách ký hiệu" />,
-        { style: styleError }
+        { style: styleError },
       );
       return;
     }
@@ -1227,7 +1493,7 @@ const Support = () => {
     if (khhdonArray.length === 0) {
       toast.error(
         <ToastNotify status={1} message="Danh sách ký hiệu không hợp lệ" />,
-        { style: styleError }
+        { style: styleError },
       );
       return;
     }
@@ -1269,7 +1535,7 @@ const Support = () => {
         status={0}
         message={`Hoàn thành: ${successCount} thành công, ${failCount} thất bại`}
       />,
-      { style: styleSuccess }
+      { style: styleSuccess },
     );
   };
 
@@ -1277,23 +1543,45 @@ const Support = () => {
   const handleGetAccount20 = async () => {
     const tax = (checkTaxCode || "").trim().replace(/-/g, "");
     if (!tax) {
-      toast.error(<ToastNotify status={-1} message="Vui lòng nhập mã số thuế" />, { style: styleError });
+      toast.error(
+        <ToastNotify status={-1} message="Vui lòng nhập mã số thuế" />,
+        { style: styleError },
+      );
       return;
     }
     const storedAccountString = localStorage.getItem("account");
     if (!storedAccountString) {
-      toast.error(<ToastNotify status={-1} message="Vui lòng đăng nhập CRM trước" />, { style: styleError });
+      toast.error(
+        <ToastNotify status={-1} message="Vui lòng đăng nhập CRM trước" />,
+        { style: styleError },
+      );
       return;
     }
     let storedAccount;
     try {
       storedAccount = JSON.parse(storedAccountString);
     } catch {
-      toast.error(<ToastNotify status={-1} message="Dữ liệu đăng nhập CRM không hợp lệ" />, { style: styleError });
+      toast.error(
+        <ToastNotify
+          status={-1}
+          message="Dữ liệu đăng nhập CRM không hợp lệ"
+        />,
+        { style: styleError },
+      );
       return;
     }
-    if (!storedAccount.username || !storedAccount.password || !storedAccount.madvcs) {
-      toast.error(<ToastNotify status={-1} message="Vui lòng đăng nhập CRM đầy đủ (username, password, mã ĐVCS)" />, { style: styleError });
+    if (
+      !storedAccount.username ||
+      !storedAccount.password ||
+      !storedAccount.madvcs
+    ) {
+      toast.error(
+        <ToastNotify
+          status={-1}
+          message="Vui lòng đăng nhập CRM đầy đủ (username, password, mã ĐVCS)"
+        />,
+        { style: styleError },
+      );
       return;
     }
     setLoadingCheckAccount(true);
@@ -1302,15 +1590,24 @@ const Support = () => {
       const tokenCrmRes = await GetTokenCRM(
         storedAccount.username,
         storedAccount.password,
-        storedAccount.madvcs
+        storedAccount.madvcs,
       );
       if (!tokenCrmRes?.token) {
-        toast.error(<ToastNotify status={-1} message="Không lấy được token CRM" />, { style: styleError });
+        toast.error(
+          <ToastNotify status={-1} message="Không lấy được token CRM" />,
+          { style: styleError },
+        );
         return;
       }
       const tokenNewApp = await ResetPasswordNewApp(tax, tokenCrmRes.token);
       if (!tokenNewApp?.token?.data) {
-        toast.error(<ToastNotify status={-1} message="Không lấy được tài khoản 2.0 cho MST này" />, { style: styleError });
+        toast.error(
+          <ToastNotify
+            status={-1}
+            message="Không lấy được tài khoản 2.0 cho MST này"
+          />,
+          { style: styleError },
+        );
         return;
       }
       const account = tokenNewApp.token.data.account;
@@ -1320,7 +1617,10 @@ const Support = () => {
       // Cơ chế như InsertCKS: lắng nghe postMessage từ trang 2.0 để lưu cookie (khi user đăng nhập xong chạy script trên trang 2.0)
       if (newWindow) {
         const messageHandler = (event) => {
-          if (event.data?.type === "COOKIES_SAVED" && event.data?.taxCode === tax) {
+          if (
+            event.data?.type === "COOKIES_SAVED" &&
+            event.data?.taxCode === tax
+          ) {
             const cookies = event.data.cookies;
             if (cookies) {
               try {
@@ -1337,12 +1637,21 @@ const Support = () => {
         }, 300000);
       }
       toast.success(
-        <ToastNotify status={0} message="Đã lấy tài khoản 2.0 và mở link đăng nhập. Đăng nhập xong quay lại, bấm Lấy danh sách ký hiệu rồi chọn tờ khai." />,
-        { style: styleSuccess }
+        <ToastNotify
+          status={0}
+          message="Đã lấy tài khoản 2.0 và mở link đăng nhập. Đăng nhập xong quay lại, bấm Lấy danh sách ký hiệu rồi chọn tờ khai."
+        />,
+        { style: styleSuccess },
       );
     } catch (err) {
       console.error(err);
-      toast.error(<ToastNotify status={-1} message={err?.message || "Lỗi khi lấy tài khoản 2.0"} />, { style: styleError });
+      toast.error(
+        <ToastNotify
+          status={-1}
+          message={err?.message || "Lỗi khi lấy tài khoản 2.0"}
+        />,
+        { style: styleError },
+      );
     } finally {
       setLoadingCheckAccount(false);
     }
@@ -1352,39 +1661,80 @@ const Support = () => {
   const handleFetchCheckRegisterList = async () => {
     const taxCodeInput = (checkTaxCode || "").trim();
     if (!taxCodeInput) {
-      toast.error(<ToastNotify status={-1} message="Vui lòng nhập mã số thuế" />, { style: styleError });
+      toast.error(
+        <ToastNotify status={-1} message="Vui lòng nhập mã số thuế" />,
+        { style: styleError },
+      );
       return;
     }
     setLoadingCheckRegisterList(true);
     setCheckRegisterList([]);
     setCheckRegisterInvoiceId("");
-    const domain = taxCodeInput.endsWith("-998") ? ".minvoice.site" : ".minvoice.app";
+    const domain = taxCodeInput.endsWith("-998")
+      ? ".minvoice.site"
+      : ".minvoice.app";
     const url = `https://${taxCodeInput}${domain}/api/InvoiceApi78/GetTypeInvoiceSeries`;
     const headers = {
-      Authorization: "Bearer O87316arj5+Od3Fqyy5hzdBfIuPk73eKqpAzBSvv8sY=",
+      Authorization: invoiceApi78AuthorizationFromInput(invoiceApi78Token, {
+        forSeries: true,
+      }),
       "Content-Type": "application/json",
     };
     try {
       const response = await axios.get(url, { headers });
-      if (response?.data?.code === "00" && Array.isArray(response?.data?.data)) {
+      if (
+        response?.data?.code === "00" &&
+        Array.isArray(response?.data?.data)
+      ) {
         const data = response.data.data;
-        const list = data.map((s) => ({
-          id: s.id,
-          name: s.khhdon ? `${s.khhdon}${s.invoiceTypeName ? " - " + s.invoiceTypeName : ""}` : (s.invoiceTypeName || s.id),
-        })).filter((s) => s.id);
+        const list = data
+          .map((s) => ({
+            id: s.id,
+            name: s.khhdon
+              ? `${s.khhdon}${s.invoiceTypeName ? " - " + s.invoiceTypeName : ""}`
+              : s.invoiceTypeName || s.id,
+          }))
+          .filter((s) => s.id);
         setCheckRegisterList(list);
         if (list.length === 0) {
-          toast.warning(<ToastNotify status={1} message="Không tìm thấy ký hiệu nào" />, { style: styleError });
+          toast.warning(
+            <ToastNotify status={1} message="Không tìm thấy ký hiệu nào" />,
+            { style: styleError },
+          );
         } else {
-          toast.success(<ToastNotify status={0} message={`Đã lấy ${list.length} ký hiệu`} />, { style: styleSuccess });
+          toast.success(
+            <ToastNotify
+              status={0}
+              message={`Đã lấy ${list.length} ký hiệu`}
+            />,
+            { style: styleSuccess },
+          );
         }
       } else {
-        throw new Error(response?.data?.message || "Không thể lấy danh sách ký hiệu");
+        const p = response?.data;
+        if (isInvoiceApi78TokenError(p)) {
+          toast.error(
+            <ToastNotify
+              status={-1}
+              message={`${p?.message || "Token hết hạn"}. Nhập Token InvoiceApi78 (tab Cập nhật HĐ lỗi / Cập nhật hàng loạt) rồi thử lại.`}
+            />,
+            { style: styleError },
+          );
+        }
+        throw new Error(p?.message || "Không thể lấy danh sách ký hiệu");
       }
     } catch (err) {
       console.error(err);
-      const msg = err?.response?.data?.message || err?.message || "Lỗi khi lấy danh sách ký hiệu";
-      toast.error(<ToastNotify status={-1} message={msg} />, { style: styleError });
+      const errData = err?.response?.data;
+      const tokenHint = isInvoiceApi78TokenError(errData)
+        ? " Nhập Token InvoiceApi78 rồi thử lại."
+        : "";
+      const msg =
+        (errData?.message || err?.message || "Lỗi khi lấy danh sách ký hiệu") +
+        tokenHint;
+      toast.error(<ToastNotify status={-1} message={msg} />, {
+        style: styleError,
+      });
     } finally {
       setLoadingCheckRegisterList(false);
     }
@@ -1395,11 +1745,20 @@ const Support = () => {
     const tax = (checkTaxCode || "").trim().replace(/-/g, "");
     const regId = (checkRegisterInvoiceId || "").trim();
     if (!tax) {
-      toast.error(<ToastNotify status={-1} message="Vui lòng nhập mã số thuế" />, { style: styleError });
+      toast.error(
+        <ToastNotify status={-1} message="Vui lòng nhập mã số thuế" />,
+        { style: styleError },
+      );
       return;
     }
     if (!regId) {
-      toast.error(<ToastNotify status={-1} message="Vui lòng chọn ký hiệu (tờ khai đăng ký)" />, { style: styleError });
+      toast.error(
+        <ToastNotify
+          status={-1}
+          message="Vui lòng chọn ký hiệu (tờ khai đăng ký)"
+        />,
+        { style: styleError },
+      );
       return;
     }
     setLoadingCheckList(true);
@@ -1409,7 +1768,8 @@ const Support = () => {
     const PAGE_SIZE = 50;
     const headers = {
       Accept: "application/json, text/plain, */*",
-      "Accept-Language": "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7,fr-FR;q=0.6,fr;q=0.5",
+      "Accept-Language":
+        "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7,fr-FR;q=0.6,fr;q=0.5",
       "Cache-Control": "no-cache",
       Connection: "keep-alive",
       Pragma: "no-cache",
@@ -1417,8 +1777,10 @@ const Support = () => {
       "Sec-Fetch-Dest": "empty",
       "Sec-Fetch-Mode": "cors",
       "Sec-Fetch-Site": "same-origin",
-      "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
-      "sec-ch-ua": '"Not:A-Brand";v="99", "Google Chrome";v="145", "Chromium";v="145"',
+      "User-Agent":
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
+      "sec-ch-ua":
+        '"Not:A-Brand";v="99", "Google Chrome";v="145", "Chromium";v="145"',
       "sec-ch-ua-mobile": "?0",
       "sec-ch-ua-platform": '"macOS"',
     };
@@ -1432,7 +1794,8 @@ const Support = () => {
         const data = res.data;
         const items = Array.isArray(data.items) ? data.items : [];
         allItems = allItems.concat(items);
-        if (totalCount == null && typeof data.totalCount === "number") totalCount = data.totalCount;
+        if (totalCount == null && typeof data.totalCount === "number")
+          totalCount = data.totalCount;
         if (items.length < PAGE_SIZE) break;
         skipCount += PAGE_SIZE;
         setCheckInvoiceList([...allItems]);
@@ -1443,12 +1806,15 @@ const Support = () => {
           status={0}
           message={`Đã lấy ${allItems.length} hóa đơn (gửi CQT: đã ký + đang gửi, sendTaxStatus=${CHECK_SENDING_TAX_STATUSES})`}
         />,
-        { style: styleSuccess }
+        { style: styleSuccess },
       );
     } catch (err) {
       console.error(err);
-      const msg = err?.response?.data?.message || err?.message || "Lỗi khi lấy danh sách";
-      toast.error(<ToastNotify status={-1} message={msg} />, { style: styleError });
+      const msg =
+        err?.response?.data?.message || err?.message || "Lỗi khi lấy danh sách";
+      toast.error(<ToastNotify status={-1} message={msg} />, {
+        style: styleError,
+      });
     } finally {
       setLoadingCheckList(false);
     }
@@ -1457,21 +1823,31 @@ const Support = () => {
   // --- Kiểm tra đang gửi hàng loạt: gọi m-gate-way/result cho từng hóa đơn
   const handleBatchCheck = async () => {
     if (!checkInvoiceList.length) {
-      toast.error(<ToastNotify status={-1} message="Hãy lấy danh sách hóa đơn (đã ký / đang gửi CQT) trước" />, {
-        style: styleError,
-      });
+      toast.error(
+        <ToastNotify
+          status={-1}
+          message="Hãy lấy danh sách hóa đơn (đã ký / đang gửi CQT) trước"
+        />,
+        {
+          style: styleError,
+        },
+      );
       return;
     }
     const tax = (checkTaxCode || "").trim().replace(/-/g, "");
     if (!tax) {
-      toast.error(<ToastNotify status={-1} message="Vui lòng nhập mã số thuế" />, { style: styleError });
+      toast.error(
+        <ToastNotify status={-1} message="Vui lòng nhập mã số thuế" />,
+        { style: styleError },
+      );
       return;
     }
     setLoadingCheckBatch(true);
     const baseUrl = `https://${tax}.minvoice.net`;
     const headers = {
       Accept: "application/json, text/plain, */*",
-      "Accept-Language": "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7,fr-FR;q=0.6,fr;q=0.5",
+      "Accept-Language":
+        "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7,fr-FR;q=0.6,fr;q=0.5",
       "Cache-Control": "no-cache",
       Connection: "keep-alive",
       Pragma: "no-cache",
@@ -1479,8 +1855,10 @@ const Support = () => {
       "Sec-Fetch-Dest": "empty",
       "Sec-Fetch-Mode": "cors",
       "Sec-Fetch-Site": "same-origin",
-      "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
-      "sec-ch-ua": '"Not:A-Brand";v="99", "Google Chrome";v="145", "Chromium";v="145"',
+      "User-Agent":
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
+      "sec-ch-ua":
+        '"Not:A-Brand";v="99", "Google Chrome";v="145", "Chromium";v="145"',
       "sec-ch-ua-mobile": "?0",
       "sec-ch-ua-platform": '"macOS"',
     };
@@ -1494,7 +1872,7 @@ const Support = () => {
       try {
         const res = await axios.get(
           `${baseUrl}/api/api/app/m-gate-way/result/${id}?type=Invoice,InvoiceCode,InvoiceCash`,
-          { headers, withCredentials: true }
+          { headers, withCredentials: true },
         );
         results.push({
           id,
@@ -1518,9 +1896,254 @@ const Support = () => {
     }
     setLoadingCheckBatch(false);
     toast.success(
-      <ToastNotify status={0} message={`Đã kiểm tra ${results.length} hóa đơn`} />,
-      { style: styleSuccess }
+      <ToastNotify
+        status={0}
+        message={`Đã kiểm tra ${results.length} hóa đơn`}
+      />,
+      { style: styleSuccess },
     );
+  };
+
+  // --- Cập nhật hóa đơn gốc hàng loạt: lọc bị thay thế -> detail -> check CQT (retry) -> update trạng thái gốc
+  const handleBulkUpdateOriginalInvoices = async () => {
+    const taxRaw = (bulkOriginalTaxCode || "").trim();
+    const tax = taxRaw.replace(/-/g, "");
+    const tenantBaseUrl = `https://${tax}.minvoice.net`;
+    const selectedRegister = seriesList.find(
+      (s) => s.khhdon === selectedSeries,
+    );
+    const registerInvoiceId = selectedRegister?.id;
+
+    if (!taxRaw) {
+      toast.error(
+        <ToastNotify status={-1} message="Vui lòng nhập mã số thuế" />,
+        { style: styleError },
+      );
+      return;
+    }
+    if (!selectedSeries) {
+      toast.error(<ToastNotify status={-1} message="Vui lòng chọn ký hiệu" />, {
+        style: styleError,
+      });
+      return;
+    }
+    if (!registerInvoiceId) {
+      toast.error(
+        <ToastNotify
+          status={-1}
+          message="Không tìm thấy registerInvoiceId của ký hiệu đã chọn. Bấm lấy ký hiệu lại rồi chọn lại."
+        />,
+        { style: styleError },
+      );
+      return;
+    }
+    setLoadingBulkOriginal(true);
+    setBulkOriginalResults([]);
+    let xsrf = "";
+    try {
+      const cookieStored =
+        localStorage.getItem(`minv_tool_cookies_${tax}`) || "";
+      xsrf = extractXsrfTokenFromCookieString(cookieStored);
+    } catch (e) {
+      console.warn("Không đọc được cookie localStorage để lấy XSRF token:", e);
+    }
+
+    const commonHeaders = {
+      Accept: "application/json, text/plain, */*",
+      "Accept-Language":
+        "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7,fr-FR;q=0.6,fr;q=0.5",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+      Pragma: "no-cache",
+      Referer: `${tenantBaseUrl}/`,
+    };
+    if (xsrf) {
+      commonHeaders.RequestVerificationToken = xsrf;
+    }
+
+    const getHeaders = {
+      ...commonHeaders,
+      "Sec-Fetch-Dest": "empty",
+      "Sec-Fetch-Mode": "cors",
+      "Sec-Fetch-Site": "same-origin",
+      "User-Agent":
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+      "sec-ch-ua":
+        '"Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"',
+      "sec-ch-ua-mobile": "?0",
+      "sec-ch-ua-platform": '"macOS"',
+    };
+
+    const postPutHeaders = {
+      ...getHeaders,
+      "Content-Type": "application/json",
+      Origin: tenantBaseUrl,
+    };
+
+    const PAGE_SIZE = 50;
+    const replacedItems = [];
+    try {
+      let skipCount = 0;
+      let totalCount = null;
+      do {
+        const listUrl =
+          `${tenantBaseUrl}/api/api/app/invoice?maxResultCount=${PAGE_SIZE}` +
+          `&skipCount=${skipCount}&invoiceStatus=6&registerInvoiceId=${encodeURIComponent(registerInvoiceId)}&loadAll=false`;
+        const listRes = await axios.get(listUrl, {
+          headers: getHeaders,
+          withCredentials: true,
+        });
+        const data = listRes?.data || {};
+        const items = Array.isArray(data.items) ? data.items : [];
+        replacedItems.push(...items);
+        if (totalCount == null && typeof data.totalCount === "number")
+          totalCount = data.totalCount;
+        if (items.length < PAGE_SIZE) break;
+        skipCount += PAGE_SIZE;
+      } while (totalCount == null || replacedItems.length < totalCount);
+
+      if (replacedItems.length === 0) {
+        toast.info(
+          <ToastNotify
+            status={0}
+            message="Không có hóa đơn bị thay thế để xử lý."
+          />,
+          {
+            style: styleSuccess,
+          },
+        );
+        return;
+      }
+
+      const results = [];
+      for (const item of replacedItems) {
+        const invoiceId =
+          item?.id || item?.invoiceId || item?.relatedInvoiceId || null;
+        const invoiceSerial = item?.invoiceSerial || selectedSeries;
+        const invoiceNumber = item?.invoiceNumber;
+
+        if (!invoiceId) {
+          results.push({
+            id: "",
+            invoiceSerial,
+            invoiceNumber,
+            status: "error",
+            updateStatus: "error",
+            message: "Không tìm thấy invoice id",
+          });
+          setBulkOriginalResults([...results]);
+          continue;
+        }
+
+        try {
+          const detailRes = await axios.get(
+            `${tenantBaseUrl}/api/api/app/invoice/${invoiceId}/detail`,
+            {
+              headers: getHeaders,
+              withCredentials: true,
+            },
+          );
+          const detail = detailRes?.data || {};
+
+          const checkRes = await retryAxiosPost(
+            `${tenantBaseUrl}/api/api/app/invoice/status-on-tax-authority`,
+            detail,
+            { headers: postPutHeaders, withCredentials: true },
+            3,
+          );
+          const tthai = Number(checkRes?.data?.tthai);
+
+          if (tthai !== 1) {
+            results.push({
+              id: invoiceId,
+              invoiceSerial: detail?.invoiceSerial || invoiceSerial,
+              invoiceNumber: detail?.invoiceNumber ?? invoiceNumber,
+              tthai: Number.isNaN(tthai) ? checkRes?.data?.tthai : tthai,
+              status: "skip",
+              updateStatus: "skip",
+              message: "Không phải trạng thái gốc (tthai != 1)",
+            });
+            setBulkOriginalResults([...results]);
+            continue;
+          }
+
+          const updatePayload = {
+            sellerTaxCode: detail?.sellerTaxCode || tax,
+            invoiceSerial: detail?.invoiceSerial || invoiceSerial,
+            invoiceNumber: detail?.invoiceNumber ?? invoiceNumber,
+            invoiceDate: detail?.invoiceDate || item?.invoiceDate,
+            totalAmount: detail?.totalAmount ?? item?.totalAmount,
+            originalStatusText: detail?.originalStatusText || "Bị thay thế",
+            invoiceStatusText: "Gốc",
+            invoiceStatus: 0,
+            id: detail?.id || invoiceId,
+          };
+
+          await axios.put(
+            `${tenantBaseUrl}/api/api/app/invoice/status-on-tax-authority`,
+            updatePayload,
+            {
+              headers: postPutHeaders,
+              withCredentials: true,
+            },
+          );
+
+          results.push({
+            id: updatePayload.id,
+            invoiceSerial: updatePayload.invoiceSerial,
+            invoiceNumber: updatePayload.invoiceNumber,
+            tthai,
+            status: "ok",
+            updateStatus: "success",
+            message: "Đã cập nhật trạng thái hóa đơn gốc",
+          });
+        } catch (err) {
+          const msg =
+            err?.response?.data?.message ||
+            err?.message ||
+            "Lỗi không xác định";
+          results.push({
+            id: invoiceId,
+            invoiceSerial,
+            invoiceNumber,
+            status: "error",
+            updateStatus: "error",
+            message: msg,
+          });
+        }
+        setBulkOriginalResults([...results]);
+      }
+
+      const successCount = results.filter(
+        (r) => r.updateStatus === "success",
+      ).length;
+      const skippedCount = results.filter(
+        (r) => r.updateStatus === "skip",
+      ).length;
+      const failCount = results.length - successCount - skippedCount;
+      toast.info(
+        <ToastNotify
+          status={0}
+          message={`Cập nhật HĐ gốc: ${successCount} thành công, ${skippedCount} bỏ qua, ${failCount} lỗi (tổng ${results.length} HĐ).`}
+        />,
+        { style: styleSuccess },
+      );
+    } catch (err) {
+      console.error("Bulk update original invoices error:", err);
+      toast.error(
+        <ToastNotify
+          status={-1}
+          message={
+            err?.response?.data?.message ||
+            err?.message ||
+            "Lỗi khi cập nhật HĐ gốc hàng loạt"
+          }
+        />,
+        { style: styleError },
+      );
+    } finally {
+      setLoadingBulkOriginal(false);
+    }
   };
 
   return (
@@ -1606,16 +2229,12 @@ const Support = () => {
             padding: "10px 20px",
             backgroundColor:
               activeTab === "bulk-update-date" ? "#007bff" : "transparent",
-            color:
-              activeTab === "bulk-update-date" ? "white" : "#007bff",
+            color: activeTab === "bulk-update-date" ? "white" : "#007bff",
             border: "none",
             borderBottom:
-              activeTab === "bulk-update-date"
-                ? "2px solid #007bff"
-                : "none",
+              activeTab === "bulk-update-date" ? "2px solid #007bff" : "none",
             cursor: "pointer",
-            fontWeight:
-              activeTab === "bulk-update-date" ? "bold" : "normal",
+            fontWeight: activeTab === "bulk-update-date" ? "bold" : "normal",
             marginLeft: "10px",
           }}
         >
@@ -1637,6 +2256,26 @@ const Support = () => {
           }}
         >
           Kiểm tra đang gửi hàng loạt
+        </button>
+        <button
+          onClick={() => setActiveTab("bulk-update-original")}
+          style={{
+            padding: "10px 20px",
+            backgroundColor:
+              activeTab === "bulk-update-original" ? "#007bff" : "transparent",
+            color: activeTab === "bulk-update-original" ? "white" : "#007bff",
+            border: "none",
+            borderBottom:
+              activeTab === "bulk-update-original"
+                ? "2px solid #007bff"
+                : "none",
+            cursor: "pointer",
+            fontWeight:
+              activeTab === "bulk-update-original" ? "bold" : "normal",
+            marginRight: "10px",
+          }}
+        >
+          Cập nhật HĐ gốc hàng loạt
         </button>
         {SHOW_TNCN_DELETE && (
           <button
@@ -1815,7 +2454,11 @@ const Support = () => {
         <div style={{ padding: "20px" }}>
           <h1 style={{ marginBottom: "20px" }}>Kiểm tra đang gửi hàng loạt</h1>
           <p style={{ marginBottom: "16px", color: "#666", fontSize: "14px" }}>
-            Lấy tài khoản 2.0 và mở link đăng nhập → đăng nhập trên trang 2.0 (cookie/session lấy theo link đó) → Lấy danh sách ký hiệu và chọn tờ khai đăng ký → Lấy danh sách hóa đơn <strong>đã ký</strong> và <strong>đang gửi CQT</strong> (<code>sendTaxStatus=2,3</code>) → Kiểm tra hàng loạt qua m-gate-way.
+            Lấy tài khoản 2.0 và mở link đăng nhập → đăng nhập trên trang 2.0
+            (cookie/session lấy theo link đó) → Lấy danh sách ký hiệu và chọn tờ
+            khai đăng ký → Lấy danh sách hóa đơn <strong>đã ký</strong> và{" "}
+            <strong>đang gửi CQT</strong> (<code>sendTaxStatus=2,3</code>) →
+            Kiểm tra hàng loạt qua m-gate-way.
           </p>
           <div
             style={{
@@ -1827,7 +2470,14 @@ const Support = () => {
             }}
           >
             <div style={{ marginBottom: "12px" }}>
-              <label style={{ display: "block", marginBottom: "4px", fontWeight: "bold", fontSize: "14px" }}>
+              <label
+                style={{
+                  display: "block",
+                  marginBottom: "4px",
+                  fontWeight: "bold",
+                  fontSize: "14px",
+                }}
+              >
                 Mã số thuế
               </label>
               <input
@@ -1835,7 +2485,13 @@ const Support = () => {
                 value={checkTaxCode}
                 onChange={(e) => setCheckTaxCode(e.target.value)}
                 placeholder="VD: 3700143591"
-                style={{ width: "100%", padding: "8px", border: "1px solid #ddd", borderRadius: "4px", fontSize: "14px" }}
+                style={{
+                  width: "100%",
+                  padding: "8px",
+                  border: "1px solid #ddd",
+                  borderRadius: "4px",
+                  fontSize: "14px",
+                }}
               />
             </div>
             <div style={{ marginBottom: "12px" }}>
@@ -1854,35 +2510,62 @@ const Support = () => {
                   fontWeight: "bold",
                 }}
               >
-                {loadingCheckAccount ? "Đang lấy..." : "Lấy tài khoản 2.0 & mở link đăng nhập"}
+                {loadingCheckAccount
+                  ? "Đang lấy..."
+                  : "Lấy tài khoản 2.0 & mở link đăng nhập"}
               </button>
               {checkAccount20 && (
-                <div style={{ marginTop: "8px", fontSize: "13px", color: "#333" }}>
-                  Tài khoản: <strong>{checkAccount20.account}</strong> — Mật khẩu: <strong>{checkAccount20.password}</strong>
+                <div
+                  style={{ marginTop: "8px", fontSize: "13px", color: "#333" }}
+                >
+                  Tài khoản: <strong>{checkAccount20.account}</strong> — Mật
+                  khẩu: <strong>{checkAccount20.password}</strong>
                 </div>
               )}
             </div>
             <div style={{ marginBottom: "12px" }}>
-              <label style={{ display: "block", marginBottom: "4px", fontWeight: "bold", fontSize: "14px" }}>
+              <label
+                style={{
+                  display: "block",
+                  marginBottom: "4px",
+                  fontWeight: "bold",
+                  fontSize: "14px",
+                }}
+              >
                 Ký hiệu (tờ khai đăng ký)
               </label>
-              <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+              <div
+                style={{
+                  display: "flex",
+                  gap: "8px",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                }}
+              >
                 <button
                   type="button"
                   onClick={handleFetchCheckRegisterList}
                   disabled={loadingCheckRegisterList || !checkTaxCode.trim()}
                   style={{
                     padding: "8px 16px",
-                    backgroundColor: loadingCheckRegisterList || !checkTaxCode.trim() ? "#ccc" : "#28a745",
+                    backgroundColor:
+                      loadingCheckRegisterList || !checkTaxCode.trim()
+                        ? "#ccc"
+                        : "#28a745",
                     color: "white",
                     border: "none",
                     borderRadius: "4px",
                     fontSize: "13px",
-                    cursor: loadingCheckRegisterList || !checkTaxCode.trim() ? "not-allowed" : "pointer",
+                    cursor:
+                      loadingCheckRegisterList || !checkTaxCode.trim()
+                        ? "not-allowed"
+                        : "pointer",
                     whiteSpace: "nowrap",
                   }}
                 >
-                  {loadingCheckRegisterList ? "Đang tải..." : "Lấy danh sách ký hiệu"}
+                  {loadingCheckRegisterList
+                    ? "Đang tải..."
+                    : "Lấy danh sách ký hiệu"}
                 </button>
               </div>
               <div style={{ marginTop: "12px", maxWidth: "480px" }}>
@@ -1890,7 +2573,9 @@ const Support = () => {
                   inputId="checkRegisterInvoice"
                   value={
                     checkRegisterInvoiceId &&
-                    checkRegisterDropdownOptions.some((o) => o.value === checkRegisterInvoiceId)
+                    checkRegisterDropdownOptions.some(
+                      (o) => o.value === checkRegisterInvoiceId,
+                    )
                       ? checkRegisterInvoiceId
                       : null
                   }
@@ -1909,20 +2594,40 @@ const Support = () => {
                   showClear
                   emptyMessage="Chưa có dữ liệu — bấm “Lấy danh sách ký hiệu”"
                   emptyFilterMessage="Không tìm thấy ký hiệu phù hợp"
-                  disabled={checkRegisterList.length === 0 || loadingCheckRegisterList}
+                  disabled={
+                    checkRegisterList.length === 0 || loadingCheckRegisterList
+                  }
                   className="w-full"
                   panelStyle={{ maxHeight: "320px" }}
                   style={{ width: "100%" }}
                 />
                 {checkRegisterList.length > 0 && (
-                  <small style={{ display: "block", marginTop: "6px", color: "#666", fontSize: "12px" }}>
-                    <i className="pi pi-filter" style={{ marginRight: "4px" }} />
-                    Gõ trong ô tìm kiếm của dropdown để lọc nhanh ({checkRegisterList.length} ký hiệu).
+                  <small
+                    style={{
+                      display: "block",
+                      marginTop: "6px",
+                      color: "#666",
+                      fontSize: "12px",
+                    }}
+                  >
+                    <i
+                      className="pi pi-filter"
+                      style={{ marginRight: "4px" }}
+                    />
+                    Gõ trong ô tìm kiếm của dropdown để lọc nhanh (
+                    {checkRegisterList.length} ký hiệu).
                   </small>
                 )}
               </div>
             </div>
-            <div style={{ marginBottom: "16px", display: "flex", gap: "10px", flexWrap: "wrap" }}>
+            <div
+              style={{
+                marginBottom: "16px",
+                display: "flex",
+                gap: "10px",
+                flexWrap: "wrap",
+              }}
+            >
               <button
                 type="button"
                 onClick={handleFetchSendingList}
@@ -1938,7 +2643,9 @@ const Support = () => {
                   fontWeight: "bold",
                 }}
               >
-                {loadingCheckList ? "Đang lấy danh sách..." : "Lấy danh sách (đã ký + đang gửi CQT)"}
+                {loadingCheckList
+                  ? "Đang lấy danh sách..."
+                  : "Lấy danh sách (đã ký + đang gửi CQT)"}
               </button>
               <button
                 type="button"
@@ -1946,46 +2653,412 @@ const Support = () => {
                 disabled={loadingCheckBatch || !checkInvoiceList.length}
                 style={{
                   padding: "10px 20px",
-                  backgroundColor: loadingCheckBatch || !checkInvoiceList.length ? "#ccc" : "#17a2b8",
+                  backgroundColor:
+                    loadingCheckBatch || !checkInvoiceList.length
+                      ? "#ccc"
+                      : "#17a2b8",
                   color: "white",
                   border: "none",
                   borderRadius: "4px",
                   fontSize: "14px",
-                  cursor: loadingCheckBatch || !checkInvoiceList.length ? "not-allowed" : "pointer",
+                  cursor:
+                    loadingCheckBatch || !checkInvoiceList.length
+                      ? "not-allowed"
+                      : "pointer",
                   fontWeight: "bold",
                 }}
               >
-                {loadingCheckBatch ? "Đang kiểm tra..." : `Kiểm tra hàng loạt (${checkInvoiceList.length})`}
+                {loadingCheckBatch
+                  ? "Đang kiểm tra..."
+                  : `Kiểm tra hàng loạt (${checkInvoiceList.length})`}
               </button>
             </div>
             {checkInvoiceList.length > 0 && (
-              <div style={{ marginTop: "16px", fontSize: "13px", color: "#333" }}>
-                Đã lấy <strong>{checkInvoiceList.length}</strong> hóa đơn (sendTaxStatus 2 = đã ký, 3 = đang gửi CQT).
+              <div
+                style={{ marginTop: "16px", fontSize: "13px", color: "#333" }}
+              >
+                Đã lấy <strong>{checkInvoiceList.length}</strong> hóa đơn
+                (sendTaxStatus 2 = đã ký, 3 = đang gửi CQT).
               </div>
             )}
             {checkResults.length > 0 && (
               <div style={{ marginTop: "20px", overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", border: "1px solid #ddd", fontSize: "13px" }}>
+                <table
+                  style={{
+                    width: "100%",
+                    borderCollapse: "collapse",
+                    border: "1px solid #ddd",
+                    fontSize: "13px",
+                  }}
+                >
                   <thead>
                     <tr style={{ backgroundColor: "#f1f1f1" }}>
-                      <th style={{ padding: "8px", border: "1px solid #ddd", textAlign: "left" }}>Ký hiệu</th>
-                      <th style={{ padding: "8px", border: "1px solid #ddd", textAlign: "left" }}>Số HĐ</th>
-                      <th style={{ padding: "8px", border: "1px solid #ddd", textAlign: "left" }}>TT gửi CQT</th>
-                      <th style={{ padding: "8px", border: "1px solid #ddd", textAlign: "left" }}>Trạng thái</th>
-                      <th style={{ padding: "8px", border: "1px solid #ddd", textAlign: "left" }}>Chi tiết</th>
+                      <th
+                        style={{
+                          padding: "8px",
+                          border: "1px solid #ddd",
+                          textAlign: "left",
+                        }}
+                      >
+                        Ký hiệu
+                      </th>
+                      <th
+                        style={{
+                          padding: "8px",
+                          border: "1px solid #ddd",
+                          textAlign: "left",
+                        }}
+                      >
+                        Số HĐ
+                      </th>
+                      <th
+                        style={{
+                          padding: "8px",
+                          border: "1px solid #ddd",
+                          textAlign: "left",
+                        }}
+                      >
+                        TT gửi CQT
+                      </th>
+                      <th
+                        style={{
+                          padding: "8px",
+                          border: "1px solid #ddd",
+                          textAlign: "left",
+                        }}
+                      >
+                        Trạng thái
+                      </th>
+                      <th
+                        style={{
+                          padding: "8px",
+                          border: "1px solid #ddd",
+                          textAlign: "left",
+                        }}
+                      >
+                        Chi tiết
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
                     {checkResults.map((r, idx) => (
                       <tr key={r.id || idx}>
-                        <td style={{ padding: "8px", border: "1px solid #ddd" }}>{r.invoiceSerial}</td>
-                        <td style={{ padding: "8px", border: "1px solid #ddd" }}>{r.invoiceNumber}</td>
-                        <td style={{ padding: "8px", border: "1px solid #ddd" }}>
-                          {r.sendTaxStatus !== "" && r.sendTaxStatus != null ? String(r.sendTaxStatus) : "—"}
+                        <td
+                          style={{ padding: "8px", border: "1px solid #ddd" }}
+                        >
+                          {r.invoiceSerial}
                         </td>
-                        <td style={{ padding: "8px", border: "1px solid #ddd" }}>{r.status === "ok" ? "OK" : "Lỗi"}</td>
-                        <td style={{ padding: "8px", border: "1px solid #ddd", maxWidth: "300px", wordBreak: "break-all" }}>
-                          {r.status === "ok" ? JSON.stringify(r.data) : (r.message || "")}
+                        <td
+                          style={{ padding: "8px", border: "1px solid #ddd" }}
+                        >
+                          {r.invoiceNumber}
+                        </td>
+                        <td
+                          style={{ padding: "8px", border: "1px solid #ddd" }}
+                        >
+                          {r.sendTaxStatus !== "" && r.sendTaxStatus != null
+                            ? String(r.sendTaxStatus)
+                            : "—"}
+                        </td>
+                        <td
+                          style={{ padding: "8px", border: "1px solid #ddd" }}
+                        >
+                          {r.status === "ok" ? "OK" : "Lỗi"}
+                        </td>
+                        <td
+                          style={{
+                            padding: "8px",
+                            border: "1px solid #ddd",
+                            maxWidth: "300px",
+                            wordBreak: "break-all",
+                          }}
+                        >
+                          {r.status === "ok"
+                            ? JSON.stringify(r.data)
+                            : r.message || ""}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activeTab === "bulk-update-original" && (
+        <div style={{ padding: "20px" }}>
+          <h1 style={{ marginBottom: "20px" }}>
+            Cập nhật hóa đơn gốc hàng loạt
+          </h1>
+          <p style={{ marginBottom: "16px", color: "#666", fontSize: "14px" }}>
+            Nhập MST → lấy ký hiệu → đăng nhập trang 2.0 (link .minvoice.net) để
+            có phiên domain → tool tự dùng cookie/XSRF đã lưu theo MST → lọc hóa
+            đơn bị thay thế (<code>invoiceStatus=6</code>) → lấy detail → check
+            CQT (retry) → tự cập nhật trạng thái về <strong>Gốc</strong>.
+          </p>
+          <div
+            style={{
+              padding: "20px",
+              backgroundColor: "#f8f9fa",
+              borderRadius: "8px",
+              border: "1px solid #dee2e6",
+              maxWidth: "900px",
+            }}
+          >
+            <div style={{ marginBottom: "12px" }}>
+              <label
+                style={{
+                  display: "block",
+                  marginBottom: "4px",
+                  fontWeight: "bold",
+                  fontSize: "14px",
+                }}
+              >
+                Mã số thuế
+              </label>
+              <input
+                type="text"
+                value={bulkOriginalTaxCode}
+                onChange={(e) => {
+                  setBulkOriginalTaxCode(e.target.value);
+                  setTaxCode(e.target.value);
+                }}
+                placeholder="VD: 0312392923 hoặc 0106026495-998"
+                style={{
+                  width: "100%",
+                  padding: "8px",
+                  border: "1px solid #ddd",
+                  borderRadius: "4px",
+                  fontSize: "14px",
+                }}
+              />
+            </div>
+
+            <div style={{ marginBottom: "12px" }}>
+              <div
+                style={{
+                  display: "flex",
+                  gap: "8px",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={handleGetSeries}
+                  disabled={loadingSeries || !bulkOriginalTaxCode.trim()}
+                  style={{
+                    padding: "8px 16px",
+                    backgroundColor:
+                      loadingSeries || !bulkOriginalTaxCode.trim()
+                        ? "#ccc"
+                        : "#28a745",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "4px",
+                    fontSize: "13px",
+                    cursor:
+                      loadingSeries || !bulkOriginalTaxCode.trim()
+                        ? "not-allowed"
+                        : "pointer",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {loadingSeries ? "Đang tải..." : "Lấy danh sách ký hiệu"}
+                </button>
+                {bulkOriginalLoginUrl && (
+                  <a
+                    href={bulkOriginalLoginUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ fontSize: "13px" }}
+                  >
+                    Mở link đăng nhập 2.0: {bulkOriginalLoginUrl}
+                  </a>
+                )}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: "12px", maxWidth: "520px" }}>
+              <label
+                style={{
+                  display: "block",
+                  marginBottom: "4px",
+                  fontWeight: "bold",
+                  fontSize: "14px",
+                }}
+              >
+                Chọn ký hiệu
+              </label>
+              <select
+                value={selectedSeries}
+                onChange={(e) => setSelectedSeries(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "8px",
+                  border: "1px solid #ddd",
+                  borderRadius: "4px",
+                  fontSize: "14px",
+                }}
+                disabled={seriesList.length === 0}
+              >
+                <option value="">
+                  {seriesList.length
+                    ? "-- Chọn ký hiệu --"
+                    : "-- Lấy ký hiệu trước --"}
+                </option>
+                {seriesList.map((series) => (
+                  <option key={series.id} value={series.khhdon}>
+                    {series.khhdon} - {series.invoiceTypeName}
+                  </option>
+                ))}
+              </select>
+              {selectedSeries && (
+                <div
+                  style={{ marginTop: "6px", fontSize: "12px", color: "#555" }}
+                >
+                  registerInvoiceId:{" "}
+                  {seriesList.find((s) => s.khhdon === selectedSeries)?.id ||
+                    "Không tìm thấy"}
+                </div>
+              )}
+            </div>
+
+            <div
+              style={{
+                marginBottom: "16px",
+                padding: "10px 12px",
+                borderRadius: "6px",
+                backgroundColor: "#e8f7ee",
+                color: "#166534",
+                border: "1px solid #dee2e6",
+                fontSize: "13px",
+              }}
+            >
+              Chế độ tự động theo phiên đăng nhập domain: chỉ cần đăng nhập ở
+              link .minvoice.net, sau đó bấm chạy. Tool gọi API giống tab kiểm
+              tra đang gửi (dùng <code>withCredentials</code>).
+            </div>
+
+            <button
+              type="button"
+              onClick={handleBulkUpdateOriginalInvoices}
+              disabled={loadingBulkOriginal}
+              style={{
+                padding: "10px 20px",
+                backgroundColor: loadingBulkOriginal ? "#ccc" : "#007bff",
+                color: "white",
+                border: "none",
+                borderRadius: "4px",
+                fontSize: "14px",
+                cursor: loadingBulkOriginal ? "not-allowed" : "pointer",
+                fontWeight: "bold",
+              }}
+            >
+              {loadingBulkOriginal
+                ? "Đang xử lý cập nhật HĐ gốc..."
+                : "Chạy cập nhật HĐ gốc hàng loạt"}
+            </button>
+
+            {bulkOriginalResults.length > 0 && (
+              <div style={{ marginTop: "20px", overflowX: "auto" }}>
+                <table
+                  style={{
+                    width: "100%",
+                    borderCollapse: "collapse",
+                    border: "1px solid #ddd",
+                    fontSize: "13px",
+                  }}
+                >
+                  <thead>
+                    <tr style={{ backgroundColor: "#f1f1f1" }}>
+                      <th
+                        style={{
+                          padding: "8px",
+                          border: "1px solid #ddd",
+                          textAlign: "left",
+                        }}
+                      >
+                        Ký hiệu
+                      </th>
+                      <th
+                        style={{
+                          padding: "8px",
+                          border: "1px solid #ddd",
+                          textAlign: "left",
+                        }}
+                      >
+                        Số HĐ
+                      </th>
+                      <th
+                        style={{
+                          padding: "8px",
+                          border: "1px solid #ddd",
+                          textAlign: "left",
+                        }}
+                      >
+                        tthai
+                      </th>
+                      <th
+                        style={{
+                          padding: "8px",
+                          border: "1px solid #ddd",
+                          textAlign: "left",
+                        }}
+                      >
+                        Kết quả
+                      </th>
+                      <th
+                        style={{
+                          padding: "8px",
+                          border: "1px solid #ddd",
+                          textAlign: "left",
+                        }}
+                      >
+                        Chi tiết
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {bulkOriginalResults.map((r, idx) => (
+                      <tr key={`${r.id || "row"}-${idx}`}>
+                        <td
+                          style={{ padding: "8px", border: "1px solid #ddd" }}
+                        >
+                          {r.invoiceSerial || "—"}
+                        </td>
+                        <td
+                          style={{ padding: "8px", border: "1px solid #ddd" }}
+                        >
+                          {r.invoiceNumber != null
+                            ? String(r.invoiceNumber)
+                            : "—"}
+                        </td>
+                        <td
+                          style={{ padding: "8px", border: "1px solid #ddd" }}
+                        >
+                          {r.tthai != null ? String(r.tthai) : "—"}
+                        </td>
+                        <td
+                          style={{ padding: "8px", border: "1px solid #ddd" }}
+                        >
+                          {r.updateStatus === "success"
+                            ? "Thành công"
+                            : r.updateStatus === "skip"
+                              ? "Bỏ qua"
+                              : "Lỗi"}
+                        </td>
+                        <td
+                          style={{
+                            padding: "8px",
+                            border: "1px solid #ddd",
+                            maxWidth: "360px",
+                            wordBreak: "break-word",
+                          }}
+                        >
+                          {r.message || ""}
                         </td>
                       </tr>
                     ))}
@@ -2000,7 +3073,7 @@ const Support = () => {
       {activeTab === "update-error" && (
         <div style={{ padding: "20px" }}>
           <h1 style={{ marginBottom: "20px" }}>Cập nhật HĐ lỗi</h1>
-          
+
           <div
             style={{
               padding: "20px",
@@ -2065,6 +3138,39 @@ const Support = () => {
               </div>
             </div>
 
+            <div style={{ marginBottom: "20px" }}>
+              <label
+                style={{
+                  display: "block",
+                  marginBottom: "8px",
+                  fontWeight: "bold",
+                  fontSize: "14px",
+                }}
+              >
+                Token InvoiceApi78 (Get ký hiệu / GetInfo / Save)
+              </label>
+              <input
+                type="password"
+                value={invoiceApi78Token}
+                onChange={(e) => setInvoiceApi78Token(e.target.value)}
+                placeholder="Dán Bear/Bearer + token hoặc chỉ token (msupport LocalStorage). Bắt buộc khi API trả code 3."
+                style={{
+                  width: "100%",
+                  padding: "10px",
+                  border: "1px solid #ddd",
+                  borderRadius: "4px",
+                  fontSize: "13px",
+                }}
+              />
+              <div
+                style={{ marginTop: "6px", fontSize: "12px", color: "#666" }}
+              >
+                Để trống thì dùng token mặc định của tool. Khi báo &quot;Token
+                hết hạn&quot; (code 3), nhập token mới rồi bấm Lấy ký hiệu /
+                chạy lại thao tác hàng loạt.
+              </div>
+            </div>
+
             {/* Dropdown chọn ký hiệu */}
             {seriesList.length > 0 && (
               <div style={{ marginTop: "20px" }}>
@@ -2118,7 +3224,14 @@ const Support = () => {
             {/* Input token */}
             {selectedSeries && (
               <div style={{ marginTop: "20px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    marginBottom: "8px",
+                  }}
+                >
                   <label
                     style={{
                       fontWeight: "bold",
@@ -2161,15 +3274,36 @@ const Support = () => {
                           lineHeight: "1.6",
                         }}
                       >
-                        <div style={{ fontWeight: "bold", marginBottom: "8px" }}>
+                        <div
+                          style={{ fontWeight: "bold", marginBottom: "8px" }}
+                        >
                           Hướng dẫn lấy token:
                         </div>
                         <ol style={{ margin: 0, paddingLeft: "20px" }}>
-                          <li>Truy cập: <a href="https://msupport.minvoice.com.vn/Update" target="_blank" rel="noopener noreferrer" style={{ color: "#4da6ff" }}>https://msupport.minvoice.com.vn/Update</a></li>
-                          <li>Nhấn <strong>F12</strong> để mở Developer Tools</li>
-                          <li>Chọn tab <strong>Application</strong></li>
-                          <li>Mở <strong>Storage</strong> → <strong>Local storage</strong></li>
-                          <li>Tìm key <strong>"token"</strong> và copy giá trị</li>
+                          <li>
+                            Truy cập:{" "}
+                            <a
+                              href="https://msupport.minvoice.com.vn/Update"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{ color: "#4da6ff" }}
+                            >
+                              https://msupport.minvoice.com.vn/Update
+                            </a>
+                          </li>
+                          <li>
+                            Nhấn <strong>F12</strong> để mở Developer Tools
+                          </li>
+                          <li>
+                            Chọn tab <strong>Application</strong>
+                          </li>
+                          <li>
+                            Mở <strong>Storage</strong> →{" "}
+                            <strong>Local storage</strong>
+                          </li>
+                          <li>
+                            Tìm key <strong>"token"</strong> và copy giá trị
+                          </li>
                         </ol>
                       </div>
                     )}
@@ -2205,7 +3339,13 @@ const Support = () => {
                   >
                     Số hóa đơn
                   </label>
-                  <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "10px",
+                      alignItems: "center",
+                    }}
+                  >
                     <input
                       type="number"
                       value={tuSo}
@@ -2219,7 +3359,9 @@ const Support = () => {
                         fontSize: "14px",
                       }}
                     />
-                    <span style={{ fontSize: "14px", fontWeight: "bold" }}>-</span>
+                    <span style={{ fontSize: "14px", fontWeight: "bold" }}>
+                      -
+                    </span>
                     <input
                       type="number"
                       value={denSo}
@@ -2239,12 +3381,20 @@ const Support = () => {
                 <div style={{ marginTop: "20px" }}>
                   <button
                     onClick={handleUpdateErrorInvoices}
-                    disabled={!tuSo.trim() || !denSo.trim() || !token.trim() || loadingInvoices}
+                    disabled={
+                      !tuSo.trim() ||
+                      !denSo.trim() ||
+                      !token.trim() ||
+                      loadingInvoices
+                    }
                     style={{
                       width: "100%",
                       padding: "12px",
                       backgroundColor:
-                        !tuSo.trim() || !denSo.trim() || !token.trim() || loadingInvoices
+                        !tuSo.trim() ||
+                        !denSo.trim() ||
+                        !token.trim() ||
+                        loadingInvoices
                           ? "#ccc"
                           : "#dc3545",
                       color: "white",
@@ -2252,7 +3402,10 @@ const Support = () => {
                       borderRadius: "4px",
                       fontSize: "14px",
                       cursor:
-                        !tuSo.trim() || !denSo.trim() || !token.trim() || loadingInvoices
+                        !tuSo.trim() ||
+                        !denSo.trim() ||
+                        !token.trim() ||
+                        loadingInvoices
                           ? "not-allowed"
                           : "pointer",
                       fontWeight: "bold",
@@ -2267,7 +3420,13 @@ const Support = () => {
             {/* Hiển thị kết quả danh sách hóa đơn */}
             {invoiceList.length > 0 && (
               <div style={{ marginTop: "30px" }}>
-                <h3 style={{ marginBottom: "15px", fontSize: "16px", fontWeight: "bold" }}>
+                <h3
+                  style={{
+                    marginBottom: "15px",
+                    fontSize: "16px",
+                    fontWeight: "bold",
+                  }}
+                >
                   Kết quả cập nhật hóa đơn ({invoiceList.length})
                 </h3>
                 <div
@@ -2363,10 +3522,14 @@ const Support = () => {
                           key={`${invoice.seri}-${invoice.number}-${index}`}
                           style={{
                             borderBottom: "1px solid #dee2e6",
-                            backgroundColor: 
+                            backgroundColor:
                               invoice.status === "success"
-                                ? index % 2 === 0 ? "#f0fdf4" : "#dcfce7"
-                                : index % 2 === 0 ? "#fff" : "#f8f9fa",
+                                ? index % 2 === 0
+                                  ? "#f0fdf4"
+                                  : "#dcfce7"
+                                : index % 2 === 0
+                                  ? "#fff"
+                                  : "#f8f9fa",
                           }}
                         >
                           <td style={{ padding: "10px" }}>{index + 1}</td>
@@ -2385,7 +3548,9 @@ const Support = () => {
                             }}
                           >
                             {invoice.hoadon68_id || (
-                              <span style={{ color: "#dc2626", fontSize: "10px" }}>
+                              <span
+                                style={{ color: "#dc2626", fontSize: "10px" }}
+                              >
                                 {invoice.error || "Không tìm thấy"}
                               </span>
                             )}
@@ -2401,16 +3566,16 @@ const Support = () => {
                                     ? invoice.tthai === "Đã gửi"
                                       ? "#d4edda"
                                       : invoice.tthai === "Chưa gửi"
-                                      ? "#fff3cd"
-                                      : "#e7f3ff"
+                                        ? "#fff3cd"
+                                        : "#e7f3ff"
                                     : "#f8d7da",
                                 color:
                                   invoice.status === "success"
                                     ? invoice.tthai === "Đã gửi"
                                       ? "#155724"
                                       : invoice.tthai === "Chưa gửi"
-                                      ? "#856404"
-                                      : "#0066cc"
+                                        ? "#856404"
+                                        : "#0066cc"
                                     : "#721c24",
                               }}
                             >
@@ -2475,20 +3640,21 @@ const Support = () => {
                                 ✗ Thất bại
                               </span>
                             )}
-                            {!invoice.updateStatus && invoice.status === "error" && (
-                              <span
-                                style={{
-                                  padding: "6px 12px",
-                                  borderRadius: "4px",
-                                  fontSize: "12px",
-                                  backgroundColor: "#f8d7da",
-                                  color: "#721c24",
-                                  fontWeight: "bold",
-                                }}
-                              >
-                                ✗ Lỗi lấy thông tin
-                              </span>
-                            )}
+                            {!invoice.updateStatus &&
+                              invoice.status === "error" && (
+                                <span
+                                  style={{
+                                    padding: "6px 12px",
+                                    borderRadius: "4px",
+                                    fontSize: "12px",
+                                    backgroundColor: "#f8d7da",
+                                    color: "#721c24",
+                                    fontWeight: "bold",
+                                  }}
+                                >
+                                  ✗ Lỗi lấy thông tin
+                                </span>
+                              )}
                           </td>
                         </tr>
                       ))}
@@ -2519,9 +3685,7 @@ const Support = () => {
 
       {activeTab === "bulk-update-date" && (
         <div style={{ padding: "20px" }}>
-          <h1 style={{ marginBottom: "20px" }}>
-            Cập nhật ngày HĐ hàng loạt
-          </h1>
+          <h1 style={{ marginBottom: "20px" }}>Cập nhật ngày HĐ hàng loạt</h1>
 
           <div
             style={{
@@ -2560,6 +3724,32 @@ const Support = () => {
                     border: "1px solid #ddd",
                     borderRadius: "4px",
                     fontSize: "14px",
+                  }}
+                />
+              </div>
+
+              <div style={{ marginBottom: "16px" }}>
+                <label
+                  style={{
+                    display: "block",
+                    marginBottom: "8px",
+                    fontWeight: "bold",
+                    fontSize: "14px",
+                  }}
+                >
+                  Token InvoiceApi78 (Get ký hiệu / GetInfo / Save)
+                </label>
+                <input
+                  type="password"
+                  value={invoiceApi78Token}
+                  onChange={(e) => setInvoiceApi78Token(e.target.value)}
+                  placeholder="Giống tab Cập nhật HĐ lỗi — nhập khi API code 3"
+                  style={{
+                    width: "100%",
+                    padding: "10px",
+                    border: "1px solid #ddd",
+                    borderRadius: "4px",
+                    fontSize: "13px",
                   }}
                 />
               </div>
@@ -2685,7 +3875,8 @@ const Support = () => {
                     color: "#666",
                   }}
                 >
-                  Ngày này sẽ được áp dụng cho tất cả hóa đơn trong khoảng số ở trên.
+                  Ngày này sẽ được áp dụng cho tất cả hóa đơn trong khoảng số ở
+                  trên.
                 </div>
               </div>
 
@@ -2753,7 +3944,13 @@ const Support = () => {
 
             {invoiceList.length > 0 && (
               <div style={{ marginTop: "24px" }}>
-                <h3 style={{ marginBottom: "12px", fontSize: "16px", fontWeight: "bold" }}>
+                <h3
+                  style={{
+                    marginBottom: "12px",
+                    fontSize: "16px",
+                    fontWeight: "bold",
+                  }}
+                >
                   Kết quả cập nhật ngày HĐ ({invoiceList.length})
                 </h3>
                 <div
@@ -2765,13 +3962,51 @@ const Support = () => {
                     backgroundColor: "white",
                   }}
                 >
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                  <table
+                    style={{
+                      width: "100%",
+                      borderCollapse: "collapse",
+                      fontSize: "13px",
+                    }}
+                  >
                     <thead>
                       <tr style={{ backgroundColor: "#f8f9fa" }}>
-                        <th style={{ padding: "8px", textAlign: "left", borderBottom: "2px solid #dee2e6" }}>STT</th>
-                        <th style={{ padding: "8px", textAlign: "left", borderBottom: "2px solid #dee2e6" }}>Ký hiệu</th>
-                        <th style={{ padding: "8px", textAlign: "left", borderBottom: "2px solid #dee2e6" }}>Số HĐ</th>
-                        <th style={{ padding: "8px", textAlign: "left", borderBottom: "2px solid #dee2e6" }}>Cập nhật</th>
+                        <th
+                          style={{
+                            padding: "8px",
+                            textAlign: "left",
+                            borderBottom: "2px solid #dee2e6",
+                          }}
+                        >
+                          STT
+                        </th>
+                        <th
+                          style={{
+                            padding: "8px",
+                            textAlign: "left",
+                            borderBottom: "2px solid #dee2e6",
+                          }}
+                        >
+                          Ký hiệu
+                        </th>
+                        <th
+                          style={{
+                            padding: "8px",
+                            textAlign: "left",
+                            borderBottom: "2px solid #dee2e6",
+                          }}
+                        >
+                          Số HĐ
+                        </th>
+                        <th
+                          style={{
+                            padding: "8px",
+                            textAlign: "left",
+                            borderBottom: "2px solid #dee2e6",
+                          }}
+                        >
+                          Cập nhật
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
@@ -2780,17 +4015,31 @@ const Support = () => {
                           key={`bulk-${inv.seri}-${inv.number}-${idx}`}
                           style={{
                             borderBottom: "1px solid #dee2e6",
-                            backgroundColor: inv.updateStatus === "success" ? "#f0fdf4" : "#fef2f2",
+                            backgroundColor:
+                              inv.updateStatus === "success"
+                                ? "#f0fdf4"
+                                : "#fef2f2",
                           }}
                         >
                           <td style={{ padding: "8px" }}>{idx + 1}</td>
-                          <td style={{ padding: "8px" }}>{inv.khieu || inv.seri || "-"}</td>
-                          <td style={{ padding: "8px" }}>{inv.shdon ?? inv.number ?? "-"}</td>
+                          <td style={{ padding: "8px" }}>
+                            {inv.khieu || inv.seri || "-"}
+                          </td>
+                          <td style={{ padding: "8px" }}>
+                            {inv.shdon ?? inv.number ?? "-"}
+                          </td>
                           <td style={{ padding: "8px" }}>
                             {inv.updateStatus === "success" ? (
-                              <span style={{ color: "#16a34a", fontWeight: "600" }}>Thành công</span>
+                              <span
+                                style={{ color: "#16a34a", fontWeight: "600" }}
+                              >
+                                Thành công
+                              </span>
                             ) : (
-                              <span style={{ color: "#dc2626", fontSize: "12px" }} title={inv.updateError}>
+                              <span
+                                style={{ color: "#dc2626", fontSize: "12px" }}
+                                title={inv.updateError}
+                              >
                                 {inv.updateError || "Lỗi"}
                               </span>
                             )}
@@ -2818,12 +4067,23 @@ const Support = () => {
               maxWidth: "700px",
             }}
           >
-            <p style={{ marginBottom: "16px", color: "#666", fontSize: "14px" }}>
-              Lấy danh sách chứng từ theo voucherSymbolId (phân trang 300), sau đó xoá từng chứng từ bằng API DELETE. Cần Bearer token và RequestVerificationToken (XSRF) từ phiên đăng nhập TNCN.
+            <p
+              style={{ marginBottom: "16px", color: "#666", fontSize: "14px" }}
+            >
+              Lấy danh sách chứng từ theo voucherSymbolId (phân trang 300), sau
+              đó xoá từng chứng từ bằng API DELETE. Cần Bearer token và
+              RequestVerificationToken (XSRF) từ phiên đăng nhập TNCN.
             </p>
             <form onSubmit={handleDeleteTncnVouchers}>
               <div style={{ marginBottom: "12px" }}>
-                <label style={{ display: "block", marginBottom: "4px", fontWeight: "bold", fontSize: "14px" }}>
+                <label
+                  style={{
+                    display: "block",
+                    marginBottom: "4px",
+                    fontWeight: "bold",
+                    fontSize: "14px",
+                  }}
+                >
                   Mã số thuế
                 </label>
                 <input
@@ -2831,11 +4091,24 @@ const Support = () => {
                   value={tncnTaxCode}
                   onChange={(e) => setTncnTaxCode(e.target.value)}
                   placeholder="VD: 0313364566"
-                  style={{ width: "100%", padding: "8px", border: "1px solid #ddd", borderRadius: "4px", fontSize: "14px" }}
+                  style={{
+                    width: "100%",
+                    padding: "8px",
+                    border: "1px solid #ddd",
+                    borderRadius: "4px",
+                    fontSize: "14px",
+                  }}
                 />
               </div>
               <div style={{ marginBottom: "12px" }}>
-                <label style={{ display: "block", marginBottom: "4px", fontWeight: "bold", fontSize: "14px" }}>
+                <label
+                  style={{
+                    display: "block",
+                    marginBottom: "4px",
+                    fontWeight: "bold",
+                    fontSize: "14px",
+                  }}
+                >
                   Voucher Symbol ID
                 </label>
                 <input
@@ -2843,11 +4116,24 @@ const Support = () => {
                   value={tncnVoucherSymbolId}
                   onChange={(e) => setTncnVoucherSymbolId(e.target.value)}
                   placeholder="VD: 3a1cf7e4-9de3-e97e-8b9f-ba83282dea11"
-                  style={{ width: "100%", padding: "8px", border: "1px solid #ddd", borderRadius: "4px", fontSize: "14px" }}
+                  style={{
+                    width: "100%",
+                    padding: "8px",
+                    border: "1px solid #ddd",
+                    borderRadius: "4px",
+                    fontSize: "14px",
+                  }}
                 />
               </div>
               <div style={{ marginBottom: "12px" }}>
-                <label style={{ display: "block", marginBottom: "4px", fontWeight: "bold", fontSize: "14px" }}>
+                <label
+                  style={{
+                    display: "block",
+                    marginBottom: "4px",
+                    fontWeight: "bold",
+                    fontSize: "14px",
+                  }}
+                >
                   Bearer token (Authorization)
                 </label>
                 <input
@@ -2855,24 +4141,52 @@ const Support = () => {
                   value={tncnBearerToken}
                   onChange={(e) => setTncnBearerToken(e.target.value)}
                   placeholder="Bearer eyJhbGci..."
-                  style={{ width: "100%", padding: "8px", border: "1px solid #ddd", borderRadius: "4px", fontSize: "14px" }}
+                  style={{
+                    width: "100%",
+                    padding: "8px",
+                    border: "1px solid #ddd",
+                    borderRadius: "4px",
+                    fontSize: "14px",
+                  }}
                 />
               </div>
               <div style={{ marginBottom: "16px" }}>
-                <label style={{ display: "block", marginBottom: "4px", fontWeight: "bold", fontSize: "14px" }}>
+                <label
+                  style={{
+                    display: "block",
+                    marginBottom: "4px",
+                    fontWeight: "bold",
+                    fontSize: "14px",
+                  }}
+                >
                   RequestVerificationToken (XSRF)
                 </label>
                 <input
                   type="text"
                   value={tncnRequestVerificationToken}
-                  onChange={(e) => setTncnRequestVerificationToken(e.target.value)}
+                  onChange={(e) =>
+                    setTncnRequestVerificationToken(e.target.value)
+                  }
                   placeholder="CfDJ8EiX1iYPse5KlIhd..."
-                  style={{ width: "100%", padding: "8px", border: "1px solid #ddd", borderRadius: "4px", fontSize: "14px" }}
+                  style={{
+                    width: "100%",
+                    padding: "8px",
+                    border: "1px solid #ddd",
+                    borderRadius: "4px",
+                    fontSize: "14px",
+                  }}
                 />
               </div>
               {tncnLog.totalFetched > 0 && (
-                <div style={{ marginBottom: "12px", fontSize: "13px", color: "#333" }}>
-                  Đã lấy: {tncnLog.totalFetched} chứng từ — Xoá thành công: {tncnLog.deleteSuccess}, thất bại: {tncnLog.deleteFail}
+                <div
+                  style={{
+                    marginBottom: "12px",
+                    fontSize: "13px",
+                    color: "#333",
+                  }}
+                >
+                  Đã lấy: {tncnLog.totalFetched} chứng từ — Xoá thành công:{" "}
+                  {tncnLog.deleteSuccess}, thất bại: {tncnLog.deleteFail}
                 </div>
               )}
               <button
@@ -2889,7 +4203,9 @@ const Support = () => {
                   fontWeight: "bold",
                 }}
               >
-                {tncnLoading ? "Đang xử lý (lấy danh sách + xoá từng bản ghi)..." : "Lấy danh sách và xoá tất cả chứng từ TNCN"}
+                {tncnLoading
+                  ? "Đang xử lý (lấy danh sách + xoá từng bản ghi)..."
+                  : "Lấy danh sách và xoá tất cả chứng từ TNCN"}
               </button>
             </form>
           </div>
