@@ -159,7 +159,9 @@ function mapInvoiceToSaveData(invoice, newDateYyyyMmDd) {
   const issued =
     (newDateYyyyMmDd || "").trim() || invoice.inv_invoiceIssuedDate || "";
   const displayFromGet = (invoice?.inv_buyerDisplayName ?? "").toString().trim();
-  const issuedDisplay = formatDateToDdMmYyyy(issued);
+  const issuedFromGetForDisplay = formatDateToDdMmYyyy(
+    (invoice?.inv_invoiceIssuedDate ?? "").toString().trim()
+  );
   const details = buildDetailsForSave(invoice);
   const mapped = {
     ...invoice,
@@ -167,8 +169,8 @@ function mapInvoiceToSaveData(invoice, newDateYyyyMmDd) {
     details,
   };
   if (displayFromGet) {
-    mapped.inv_buyerDisplayName = issuedDisplay
-      ? `${displayFromGet} ngày ${issuedDisplay}`
+    mapped.inv_buyerDisplayName = issuedFromGetForDisplay
+      ? `${displayFromGet} ngày ${issuedFromGetForDisplay}`
       : displayFromGet;
   }
   // Với dữ liệu tích hợp, backend Save có thể reject nếu giữ key_api = "TICH_HOP"
