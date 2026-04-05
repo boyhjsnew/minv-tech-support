@@ -155,7 +155,11 @@ async function retryAxiosPost(url, data, config, maxAttempts = 3) {
  * Map từ GetInfoInvoice sang 1 phần tử cho API Save.
  * Cấu trúc details giống mẫu: [ { data: [ dòng 1, dòng 2, ... ] } ]. Chỉ đổi ngày.
  */
-function mapInvoiceToSaveData(invoice, newDateYyyyMmDd) {
+function mapInvoiceToSaveData(
+  invoice,
+  newDateYyyyMmDd,
+  { keepBuyerDisplayAsGet = false } = {}
+) {
   const issued =
     (newDateYyyyMmDd || "").trim() || invoice.inv_invoiceIssuedDate || "";
   const displayFromGet = (invoice?.inv_buyerDisplayName ?? "").toString().trim();
@@ -168,7 +172,7 @@ function mapInvoiceToSaveData(invoice, newDateYyyyMmDd) {
     inv_invoiceIssuedDate: issued,
     details,
   };
-  if (displayFromGet) {
+  if (displayFromGet && !keepBuyerDisplayAsGet) {
     mapped.inv_buyerDisplayName = issuedFromGetForDisplay
       ? `${displayFromGet} ngày ${issuedFromGetForDisplay}`
       : displayFromGet;
@@ -803,7 +807,9 @@ const Support = () => {
 
             const invoice = response.data.data;
             const newDateStr = bulkNewDate.trim();
-            const saveDataItem = mapInvoiceToSaveData(invoice, newDateStr);
+            const saveDataItem = mapInvoiceToSaveData(invoice, newDateStr, {
+              keepBuyerDisplayAsGet: true,
+            });
 
             const savePayload = {
               editmode: invoice.editmode != null ? invoice.editmode : 2,
