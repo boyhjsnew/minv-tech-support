@@ -186,6 +186,21 @@ const NavBar = () => {
             role="none"
             style={{ alignItems: "center" }}
             className={
+              getLocation.pathname === "/tra-cuu-tinh-trang-mst" ? "active" : ""
+            }
+          >
+            <Link className="link" to="/tra-cuu-tinh-trang-mst">
+              <span
+                style={{ paddingRight: "5px" }}
+                className="fa-solid fa-magnifying-glass"
+              ></span>
+              <span>Tra cứu tình trạng MST</span>
+            </Link>
+          </li>
+          <li
+            role="none"
+            style={{ alignItems: "center" }}
+            className={
               getLocation.pathname === "/ho-tro-ky-thuat" ? "active" : ""
             }
           >

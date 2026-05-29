@@ -160,12 +160,13 @@ function mapInvoiceToSaveData(
   newDateYyyyMmDd,
   { keepBuyerDisplayAsGet = false } = {}
 ) {
+  const issuedFromGetRaw =
+    (invoice?.inv_invoiceIssuedDate ?? "").toString().trim() ||
+    (invoice?.inv_issuDate ?? "").toString().trim();
   const issued =
-    (newDateYyyyMmDd || "").trim() || invoice.inv_invoiceIssuedDate || "";
+    (newDateYyyyMmDd || "").trim() || issuedFromGetRaw;
   const displayFromGet = (invoice?.inv_buyerDisplayName ?? "").toString().trim();
-  const issuedFromGetForDisplay = formatDateToDdMmYyyy(
-    (invoice?.inv_invoiceIssuedDate ?? "").toString().trim()
-  );
+  const issuedFromGetForDisplay = formatDateToDdMmYyyy(issuedFromGetRaw);
   const details = buildDetailsForSave(invoice);
   const mapped = {
     ...invoice,

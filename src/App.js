@@ -22,6 +22,7 @@ import IntrustMultipe from "./page/upgrade/IntrustMultipe";
 import DeleteCache from "./page/cache/DeleteCache";
 import UpdateMuiltipe from "./page/UpdateMuiltipe";
 import Support from "./page/Support";
+import GdtTaxStatusLookup from "./page/GdtTaxStatusLookup";
 
 const Layout = () => {
   const location = useLocation();
@@ -95,6 +96,10 @@ const router = createBrowserRouter([
       {
         path: "/tra-cuu",
         element: <Tax />,
+      },
+      {
+        path: "/tra-cuu-tinh-trang-mst",
+        element: <GdtTaxStatusLookup />,
       },
       {
         path: "/chuyen-chu-ky-so",
