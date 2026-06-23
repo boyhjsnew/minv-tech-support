@@ -211,6 +211,9 @@ const Support = () => {
   const [bulkNewDate, setBulkNewDate] = useState("");
   /** Token InvoiceApi78 (Get ký hiệu / GetInfo / Save). Nhập khi API trả code 3 — token hết hạn. */
   const [invoiceApi78Token, setInvoiceApi78Token] = useState("");
+  /** Tạo mới HĐ: tự ghép tên KH + ngày tờ HĐ get về (vd: "Khách ngày 01/01/2025"). */
+  const [bulkCreateAutoBuyerNameWithDate, setBulkCreateAutoBuyerNameWithDate] =
+    useState(true);
 
   // States for "Xoá chứng từ TNCN" tab (defaults theo curl mẫu bạn gửi)
   const [tncnTaxCode, setTncnTaxCode] = useState("0313364566");
@@ -1399,7 +1402,9 @@ const Support = () => {
             continue;
           }
           // Map dữ liệu và set ngày hóa đơn là ngày hiện tại
-          const saveDataItem = mapInvoiceToSaveData(invoice, todayStr);
+          const saveDataItem = mapInvoiceToSaveData(invoice, todayStr, {
+            keepBuyerDisplayAsGet: !bulkCreateAutoBuyerNameWithDate,
+          });
           // Khi tạo mới, nếu giữ nguyên key_api sẽ bị backend check trùng → bỏ key_api để backend tự sinh
           const newDataItem = { ...saveDataItem };
           delete newDataItem.key_api;
@@ -3928,6 +3933,39 @@ const Support = () => {
                     ? "Đang cập nhật ma_thue=-2..."
                     : "Lấy từng HĐ và cập nhật ma_thue=-2"}
                 </button>
+
+                <div
+                  style={{
+                    width: "100%",
+                    marginTop: "4px",
+                    marginBottom: "4px",
+                  }}
+                >
+                  <label
+                    style={{
+                      display: "flex",
+                      alignItems: "flex-start",
+                      gap: "8px",
+                      fontSize: "13px",
+                      color: "#333",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={bulkCreateAutoBuyerNameWithDate}
+                      onChange={(e) =>
+                        setBulkCreateAutoBuyerNameWithDate(e.target.checked)
+                      }
+                      style={{ marginTop: "2px" }}
+                    />
+                    <span>
+                      Tự động ghép tên khách hàng + ngày tờ HĐ get về (vd:{" "}
+                      <em>Khách ngày 01/01/2025</em>). Bỏ chọn để giữ nguyên tên
+                      KH từ API.
+                    </span>
+                  </label>
+                </div>
 
                 <button
                   type="button"
