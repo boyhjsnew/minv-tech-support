@@ -64,8 +64,8 @@ const NavBar = () => {
       e.preventDefault();
       alert(
         "⚠️ Vui lòng đăng nhập CRM trước!\n\n" +
-        "Bạn cần đăng nhập vào CRM để sử dụng tính năng này.\n" +
-        "Vui lòng vào trang 'Đăng nhập CRM' để đăng nhập."
+          "Bạn cần đăng nhập vào CRM để sử dụng tính năng này.\n" +
+          "Vui lòng vào trang 'Đăng nhập CRM' để đăng nhập.",
       );
       navigate("/tu-dong-dang-nhap");
     }
@@ -143,7 +143,7 @@ const NavBar = () => {
             </div>
             {dropdown && <Dropdown />}
           </li>
-          <li
+          {/* <li
             role="none"
             style={{ alignItems: "center", position: "relative" }}
             className={getLocation.pathname === "/xoa-cache-ky" ? "active" : ""}
@@ -161,9 +161,9 @@ const NavBar = () => {
               ></span>
               <span>Gửi mail hàng loạt VPĐKĐĐ</span>
             </Link>
-          </li>
+          </li> */}
 
-          <li
+          {/* <li
             role="none"
             style={{ alignItems: "center" }}
             className={
@@ -181,7 +181,7 @@ const NavBar = () => {
               ></span>
               <span>Cập nhật hoá đơn hàng loạt</span>
             </Link>
-          </li>
+          </li> */}
           <li
             role="none"
             style={{ alignItems: "center" }}
@@ -195,6 +195,21 @@ const NavBar = () => {
                 className="fa-solid fa-magnifying-glass"
               ></span>
               <span>Tra cứu tình trạng MST</span>
+            </Link>
+          </li>
+          <li
+            role="none"
+            style={{ alignItems: "center" }}
+            className={
+              getLocation.pathname === "/doc-file-repx" ? "active" : ""
+            }
+          >
+            <Link className="link" to="/doc-file-repx">
+              <span
+                style={{ paddingRight: "5px" }}
+                className="fa-solid fa-image"
+              ></span>
+              <span>Xử lý REPX 1.0</span>
             </Link>
           </li>
           <li

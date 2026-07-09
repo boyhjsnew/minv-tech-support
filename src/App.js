@@ -23,6 +23,7 @@ import DeleteCache from "./page/cache/DeleteCache";
 import UpdateMuiltipe from "./page/UpdateMuiltipe";
 import Support from "./page/Support";
 import GdtTaxStatusLookup from "./page/GdtTaxStatusLookup";
+import RepxImageExtractor from "./page/RepxImageExtractor";
 
 const Layout = () => {
   const location = useLocation();
@@ -100,6 +101,10 @@ const router = createBrowserRouter([
       {
         path: "/tra-cuu-tinh-trang-mst",
         element: <GdtTaxStatusLookup />,
+      },
+      {
+        path: "/doc-file-repx",
+        element: <RepxImageExtractor />,
       },
       {
         path: "/chuyen-chu-ky-so",

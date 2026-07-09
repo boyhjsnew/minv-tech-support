@@ -39,6 +39,9 @@ const SAVE_API_HEADERS = {
 const DEFAULT_INVOICE_API78_SERIES_AUTH =
   "Bearer O87316arj5+Od3Fqyy5hzdBfIuPk73eKqpAzBSvv8sY=";
 
+const RETAIL_NO_INVOICE_BUYER_NAME = "Khách lẻ không lấy hóa đơn";
+const CONSUMER_BUYER_NAME = "Bán cho người tiêu dùng";
+
 /** Phản hồi InvoiceApi78 khi token hết hạn / sai. */
 function isInvoiceApi78TokenError(payload) {
   const c = payload?.code;
@@ -896,6 +899,208 @@ const Support = () => {
         setLoadingInvoices(false);
       }
     })();
+  };
+
+  // Cập nhật tên người mua: "Khách lẻ không lấy hóa đơn" → "Bán cho người tiêu dùng"
+  const handleBulkReplaceRetailBuyerName = async () => {
+    if (!bulkTaxCode.trim()) {
+      toast.error(
+        <ToastNotify status={1} message="Vui lòng nhập mã số thuế" />,
+        { style: styleError },
+      );
+      return;
+    }
+    if (!selectedSeries) {
+      toast.error(<ToastNotify status={1} message="Vui lòng chọn ký hiệu" />, {
+        style: styleError,
+      });
+      return;
+    }
+    if (!bulkFromNumber.trim() || !bulkToNumber.trim()) {
+      toast.error(
+        <ToastNotify
+          status={1}
+          message="Vui lòng nhập khoảng số hóa đơn (từ số, đến số)"
+        />,
+        { style: styleError },
+      );
+      return;
+    }
+    const fromNum = parseInt(bulkFromNumber, 10);
+    const toNum = parseInt(bulkToNumber, 10);
+    if (isNaN(fromNum) || isNaN(toNum) || fromNum > toNum) {
+      toast.error(
+        <ToastNotify
+          status={1}
+          message="Khoảng số hóa đơn không hợp lệ. Từ số phải nhỏ hơn hoặc bằng đến số."
+        />,
+        { style: styleError },
+      );
+      return;
+    }
+
+    setLoadingInvoices(true);
+    setInvoiceList([]);
+
+    try {
+      const domainSuffix = bulkTaxCode.endsWith("-998")
+        ? ".minvoice.site"
+        : ".minvoice.app";
+      const baseUrl = `https://${bulkTaxCode}${domainSuffix}`;
+      const getInfoUrl = `${baseUrl}/api/InvoiceApi78/GetInfoInvoice`;
+      const saveUrl = `${baseUrl}/api/InvoiceApi78/Save`;
+
+      const authHeader = invoiceApi78AuthorizationFromInput(invoiceApi78Token, {
+        forSeries: false,
+      });
+      const getInvoiceHeaders = {
+        "Content-Type": "application/json",
+        Authorization: authHeader,
+      };
+      const saveHeaders = buildSaveApiHeaders(authHeader);
+
+      const results = [];
+
+      for (let number = toNum; number >= fromNum; number--) {
+        try {
+          const response = await axios.get(getInfoUrl, {
+            params: { number, seri: selectedSeries },
+            headers: getInvoiceHeaders,
+          });
+
+          if (
+            !response?.data ||
+            response.data.code !== "00" ||
+            !response.data.data
+          ) {
+            const p = response?.data;
+            const tokenHint = isInvoiceApi78TokenError(p)
+              ? " Token hết hạn — nhập Token InvoiceApi78 rồi chạy lại."
+              : "";
+            results.push({
+              number,
+              seri: selectedSeries,
+              hoadon68_id: null,
+              inv_invoiceAuth_id: null,
+              khieu: selectedSeries,
+              shdon: number,
+              tthai: "",
+              status: "error",
+              updateStatus: "error",
+              updateError:
+                (p?.message || "Không lấy được thông tin HĐ") + tokenHint,
+            });
+            setInvoiceList([...results]);
+            continue;
+          }
+
+          const invoice = response.data.data;
+          const buyerName = (invoice.inv_buyerDisplayName ?? "")
+            .toString()
+            .trim();
+
+          if (buyerName !== RETAIL_NO_INVOICE_BUYER_NAME) {
+            results.push({
+              number,
+              seri: selectedSeries,
+              hoadon68_id: invoice.hoadon68_id,
+              inv_invoiceAuth_id: invoice.inv_invoiceAuth_id,
+              khieu:
+                invoice.inv_invoiceSeries || invoice.khieu || selectedSeries,
+              shdon: invoice.inv_invoiceNumber || invoice.shdon || number,
+              tthai: invoice.tthai || "",
+              status: "skipped",
+              updateStatus: "skipped",
+              updateError: `Bỏ qua: tên người mua là "${buyerName || "(trống)"}"`,
+            });
+            setInvoiceList([...results]);
+            continue;
+          }
+
+          const saveDataItem = mapInvoiceToSaveData(invoice, "");
+          saveDataItem.inv_buyerDisplayName = CONSUMER_BUYER_NAME;
+
+          const savePayload = {
+            editmode: invoice.editmode != null ? invoice.editmode : 2,
+            data: [saveDataItem],
+          };
+
+          await axios.post(saveUrl, savePayload, { headers: saveHeaders });
+
+          results.push({
+            number,
+            seri: selectedSeries,
+            hoadon68_id: invoice.hoadon68_id,
+            inv_invoiceAuth_id: invoice.inv_invoiceAuth_id,
+            khieu:
+              invoice.inv_invoiceSeries || invoice.khieu || selectedSeries,
+            shdon: invoice.inv_invoiceNumber || invoice.shdon || number,
+            tthai: invoice.tthai || "",
+            status: "success",
+            updateStatus: "success",
+            updateError: `Đã đổi thành "${CONSUMER_BUYER_NAME}"`,
+          });
+        } catch (err) {
+          const isGetError =
+            !err.config?.method || err.config.method.toLowerCase() === "get";
+          const errData = err?.response?.data;
+          const tokenHint = isInvoiceApi78TokenError(errData)
+            ? " Token hết hạn — nhập Token InvoiceApi78 rồi chạy lại."
+            : "";
+          const msg =
+            (errData?.message ||
+              errData?.Message ||
+              err?.message ||
+              "Lỗi không xác định") + tokenHint;
+          results.push({
+            number,
+            seri: selectedSeries,
+            hoadon68_id: null,
+            inv_invoiceAuth_id: null,
+            khieu: selectedSeries,
+            shdon: number,
+            tthai: "",
+            status: isGetError ? "error" : "success",
+            updateStatus: "error",
+            updateError: msg,
+          });
+        }
+        setInvoiceList([...results]);
+      }
+
+      results.sort((a, b) => (a.number ?? 0) - (b.number ?? 0));
+      setInvoiceList([...results]);
+
+      const successCount = results.filter(
+        (r) => r.updateStatus === "success",
+      ).length;
+      const skippedCount = results.filter(
+        (r) => r.updateStatus === "skipped",
+      ).length;
+      const failCount = results.filter((r) => r.updateStatus === "error").length;
+      toast.info(
+        <ToastNotify
+          status={0}
+          message={`Cập nhật tên người mua: ${successCount} thành công, ${skippedCount} bỏ qua, ${failCount} thất bại (tổng ${results.length} hóa đơn).`}
+        />,
+        { style: styleSuccess },
+      );
+    } catch (error) {
+      console.error("Error bulk replace retail buyer name:", error);
+      toast.error(
+        <ToastNotify
+          status={1}
+          message={
+            error.response?.data?.message ||
+            error.message ||
+            "Lỗi khi cập nhật tên người mua hàng loạt"
+          }
+        />,
+        { style: styleError },
+      );
+    } finally {
+      setLoadingInvoices(false);
+    }
   };
 
   // Cập nhật hàng loạt ma_thue = -2 (tương đương inv_vatAmount = 0)
@@ -3934,6 +4139,27 @@ const Support = () => {
                     : "Lấy từng HĐ và cập nhật ma_thue=-2"}
                 </button>
 
+                <button
+                  type="button"
+                  onClick={handleBulkReplaceRetailBuyerName}
+                  disabled={loadingInvoices}
+                  style={{
+                    padding: "10px 20px",
+                    backgroundColor: loadingInvoices ? "#ccc" : "#fd7e14",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "4px",
+                    fontSize: "14px",
+                    cursor: loadingInvoices ? "not-allowed" : "pointer",
+                    fontWeight: "bold",
+                  }}
+                  title={`Đổi inv_buyerDisplayName từ "${RETAIL_NO_INVOICE_BUYER_NAME}" sang "${CONSUMER_BUYER_NAME}"`}
+                >
+                  {loadingInvoices
+                    ? "Đang cập nhật tên người mua..."
+                    : `Cập nhật tên người mua (${RETAIL_NO_INVOICE_BUYER_NAME} → ${CONSUMER_BUYER_NAME})`}
+                </button>
+
                 <div
                   style={{
                     width: "100%",
@@ -4065,7 +4291,9 @@ const Support = () => {
                             backgroundColor:
                               inv.updateStatus === "success"
                                 ? "#f0fdf4"
-                                : "#fef2f2",
+                                : inv.updateStatus === "skipped"
+                                  ? "#fffbeb"
+                                  : "#fef2f2",
                           }}
                         >
                           <td style={{ padding: "8px" }}>{idx + 1}</td>
@@ -4081,6 +4309,14 @@ const Support = () => {
                                 style={{ color: "#16a34a", fontWeight: "600" }}
                               >
                                 Thành công
+                                {inv.updateError ? ` — ${inv.updateError}` : ""}
+                              </span>
+                            ) : inv.updateStatus === "skipped" ? (
+                              <span
+                                style={{ color: "#d97706", fontSize: "12px" }}
+                                title={inv.updateError}
+                              >
+                                {inv.updateError || "Bỏ qua"}
                               </span>
                             ) : (
                               <span

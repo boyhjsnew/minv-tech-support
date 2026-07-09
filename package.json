@@ -17,6 +17,7 @@
     "class-variance-authority": "^0.7.1",
     "cors": "^2.8.5",
     "crypto-js": "^4.2.0",
+    "fast-xml-parser": "^5.9.3",
     "font-awesome": "^4.7.0",
     "http-proxy-middleware": "^2.0.9",
     "jszip": "^3.10.1",
@@ -39,7 +40,11 @@
     "start": "react-scripts start",
     "build": "CI=false react-scripts build",
     "test": "react-scripts test",
-    "eject": "react-scripts eject"
+    "eject": "react-scripts eject",
+    "repx-api:install": "cd repx-api && npm install",
+    "repx-api:dev": "cd repx-api && npm run start:dev",
+    "repx-next:install": "cd repx-next && npm install",
+    "repx-next:dev": "cd repx-next && npm run dev"
   },
   "eslintConfig": {
     "extends": [
