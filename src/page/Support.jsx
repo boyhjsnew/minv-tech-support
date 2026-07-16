@@ -39,8 +39,9 @@ const SAVE_API_HEADERS = {
 const DEFAULT_INVOICE_API78_SERIES_AUTH =
   "Bearer O87316arj5+Od3Fqyy5hzdBfIuPk73eKqpAzBSvv8sY=";
 
-const RETAIL_NO_INVOICE_BUYER_NAME = "Khách lẻ không lấy hóa đơn";
-const CONSUMER_BUYER_NAME = "Bán cho người tiêu dùng";
+const CONSUMER_BUYER_NAME = "Bán hàng cho người tiêu dùng";
+/** Tên người mua mặc định khi tạo mới HĐ (không có tên đơn vị). */
+const CREATE_CONSUMER_BUYER_NAME = "Bán cho người tiêu dùng";
 
 /** Phản hồi InvoiceApi78 khi token hết hạn / sai. */
 function isInvoiceApi78TokenError(payload) {
@@ -901,7 +902,7 @@ const Support = () => {
     })();
   };
 
-  // Cập nhật tên người mua: "Khách lẻ không lấy hóa đơn" → "Bán cho người tiêu dùng"
+  // Cập nhật tên người mua khi inv_buyerDisplayName và inv_buyerLegalName đều trống
   const handleBulkReplaceRetailBuyerName = async () => {
     if (!bulkTaxCode.trim()) {
       toast.error(
@@ -995,11 +996,14 @@ const Support = () => {
           }
 
           const invoice = response.data.data;
-          const buyerName = (invoice.inv_buyerDisplayName ?? "")
+          const buyerDisplayName = (invoice.inv_buyerDisplayName ?? "")
+            .toString()
+            .trim();
+          const buyerLegalName = (invoice.inv_buyerLegalName ?? "")
             .toString()
             .trim();
 
-          if (buyerName !== RETAIL_NO_INVOICE_BUYER_NAME) {
+          if (buyerDisplayName || buyerLegalName) {
             results.push({
               number,
               seri: selectedSeries,
@@ -1011,7 +1015,7 @@ const Support = () => {
               tthai: invoice.tthai || "",
               status: "skipped",
               updateStatus: "skipped",
-              updateError: `Bỏ qua: tên người mua là "${buyerName || "(trống)"}"`,
+              updateError: `Bỏ qua: buyerDisplayName="${buyerDisplayName || "(trống)"}", buyerLegalName="${buyerLegalName || "(trống)"}"`,
             });
             setInvoiceList([...results]);
             continue;
@@ -1613,6 +1617,23 @@ const Support = () => {
           // Khi tạo mới, nếu giữ nguyên key_api sẽ bị backend check trùng → bỏ key_api để backend tự sinh
           const newDataItem = { ...saveDataItem };
           delete newDataItem.key_api;
+
+          // Nếu tên đơn vị (buyerLegalName) trống và tên người mua khác
+          // "Bán cho người tiêu dùng" → gán lại trước khi tạo mới
+          const buyerLegalName = (invoice.inv_buyerLegalName ?? "")
+            .toString()
+            .trim();
+          const buyerDisplayNameFromGet = (
+            invoice.inv_buyerDisplayName ?? ""
+          )
+            .toString()
+            .trim();
+          if (
+            !buyerLegalName &&
+            buyerDisplayNameFromGet !== CREATE_CONSUMER_BUYER_NAME
+          ) {
+            newDataItem.inv_buyerDisplayName = CREATE_CONSUMER_BUYER_NAME;
+          }
 
           const savePayload = {
             editmode: 1, // Tạo mới
@@ -4153,11 +4174,11 @@ const Support = () => {
                     cursor: loadingInvoices ? "not-allowed" : "pointer",
                     fontWeight: "bold",
                   }}
-                  title={`Đổi inv_buyerDisplayName từ "${RETAIL_NO_INVOICE_BUYER_NAME}" sang "${CONSUMER_BUYER_NAME}"`}
+                  title={`Nếu inv_buyerDisplayName và inv_buyerLegalName đều trống thì gán buyerDisplayName = "${CONSUMER_BUYER_NAME}"`}
                 >
                   {loadingInvoices
                     ? "Đang cập nhật tên người mua..."
-                    : `Cập nhật tên người mua (${RETAIL_NO_INVOICE_BUYER_NAME} → ${CONSUMER_BUYER_NAME})`}
+                    : `Cập nhật tên người mua (trống → ${CONSUMER_BUYER_NAME})`}
                 </button>
 
                 <div
