@@ -23,6 +23,8 @@ import DeleteCache from "./page/cache/DeleteCache";
 import UpdateMuiltipe from "./page/UpdateMuiltipe";
 import Support from "./page/Support";
 import GdtTaxStatusLookup from "./page/GdtTaxStatusLookup";
+import CheckMessageMvanLookup from "./page/CheckMessageMvanLookup";
+import CreateUnitBulk from "./page/CreateUnitBulk";
 import RepxImageExtractor from "./page/RepxImageExtractor";
 
 const Layout = () => {
@@ -101,6 +103,14 @@ const router = createBrowserRouter([
       {
         path: "/tra-cuu-tinh-trang-mst",
         element: <GdtTaxStatusLookup />,
+      },
+      {
+        path: "/tra-cuu-thong-diep",
+        element: <CheckMessageMvanLookup />,
+      },
+      {
+        path: "/tao-don-vi-tinh",
+        element: <CreateUnitBulk />,
       },
       {
         path: "/doc-file-repx",

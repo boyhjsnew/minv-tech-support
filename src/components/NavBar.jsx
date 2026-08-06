@@ -129,7 +129,14 @@ const NavBar = () => {
             role="none"
             style={{ alignItems: "center" }}
             className={
-              getLocation.pathname === "/chuyen-chu-ky-so" ? "active" : ""
+              getLocation.pathname === "/chuyen-chu-ky-so" ||
+              getLocation.pathname === "/dong-bo-du-lieu" ||
+              getLocation.pathname === "/chu-ky-so-hang-loat" ||
+              getLocation.pathname === "/chuyen-to-khai" ||
+              getLocation.pathname === "/ho-tro-ky-thuat" ||
+              getLocation.pathname === "/tao-don-vi-tinh"
+                ? "active"
+                : ""
             }
           >
             <div onClick={closeMobileMenu} className="link">
@@ -195,6 +202,21 @@ const NavBar = () => {
                 className="fa-solid fa-magnifying-glass"
               ></span>
               <span>Tra cứu tình trạng MST</span>
+            </Link>
+          </li>
+          <li
+            role="none"
+            style={{ alignItems: "center" }}
+            className={
+              getLocation.pathname === "/tra-cuu-thong-diep" ? "active" : ""
+            }
+          >
+            <Link className="link" to="/tra-cuu-thong-diep">
+              <span
+                style={{ paddingRight: "5px" }}
+                className="fa-solid fa-envelope-open-text"
+              ></span>
+              <span>Tra cứu thông điệp</span>
             </Link>
           </li>
           <li

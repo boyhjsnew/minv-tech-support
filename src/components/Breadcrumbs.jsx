@@ -8,6 +8,8 @@ const breadcrumbLabels = {
   "/chuyen-chu-ky-so": "Chuyển chữ ký số",
   "/tra-cuu": "Tra cứu MST mSMI",
   "/tra-cuu-tinh-trang-mst": "Tra cứu tình trạng MST (GDT)",
+  "/tra-cuu-thong-diep": "Tra cứu thông điệp MVAN",
+  "/tao-don-vi-tinh": "Tạo đơn vị tính hàng loạt",
   "/branchreport": "Báo cáo chi nhánh",
   "/systemreport": "Báo cáo toàn hệ thống",
   "/xoa-cache-ky": "Gửi mail hàng loạt VPĐKĐĐ",

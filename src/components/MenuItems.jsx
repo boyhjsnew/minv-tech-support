@@ -41,4 +41,10 @@ export const MenuItems = [
     cName: "dropdown-link",
     icon: "icon-sub fa-regular fa-circle",
   },
+  {
+    title: "Tạo đơn vị tính hàng loạt",
+    path: "/tao-don-vi-tinh",
+    cName: "dropdown-link",
+    icon: "icon-sub fa-regular fa-circle",
+  },
 ];
