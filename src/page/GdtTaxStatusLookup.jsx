@@ -17,7 +17,7 @@ function GdtTaxStatusLookup() {
   const [parsing, setParsing] = useState(false);
   const [progress, setProgress] = useState({ current: 0, total: 0, mst: "" });
   const [error, setError] = useState("");
-  const [concurrency, setConcurrency] = useState(8);
+  const [concurrency, setConcurrency] = useState(4);
 
   const parseExcelFile = (file) => {
     setParsing(true);
@@ -134,9 +134,9 @@ function GdtTaxStatusLookup() {
     <div style={{ padding: "6rem 2rem 2rem", maxWidth: "1100px", margin: "0 auto" }}>
       <h2 style={{ marginBottom: "8px" }}>Tra cứu tình trạng mã số thuế (GDT)</h2>
       <p style={{ color: "#555", marginBottom: "20px", fontSize: "14px" }}>
-        Import Excel danh sách MST → tra cứu API GDT (mặc định{" "}
-        <strong>8 request song song</strong>, không chờ giữa các MST) → xuất
-        Excel. Mỗi request timeout tối đa 15s.
+        Import Excel danh sách MST → tra cứu API GDT trực tiếp (giống Postman).
+        Mặc định <strong>4 request song song</strong>, timeout tối đa 60s/request,
+        tự retry khi timeout.
       </p>
 
       <div

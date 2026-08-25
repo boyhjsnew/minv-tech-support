@@ -1,8 +1,13 @@
 import axios from "axios";
 
+const GDT_BASE = "https://hoadondientu.gdt.gov.vn";
 const GDT_REFERER = "https://test-qlhd.minvoice.com.vn/";
 const GDT_USER_AGENT =
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36";
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36";
+
+/** Timeout mỗi request (ms). GDT đôi khi chậm hơn Postman một chút. */
+const GDT_TIMEOUT_MS = 60000;
+const GDT_MAX_RETRIES = 2;
 
 /** Mã tthai → mô tả tình trạng NNT (theo GDT) */
 export const TTHAI_LABELS = {
@@ -85,7 +90,7 @@ function getValueByPriority(row, candidates) {
     }
   }
   const normalizedCandidates = candidates.map((k) =>
-    String(k).toLowerCase().replace(/\s+/g, "")
+    String(k).toLowerCase().replace(/\s+/g, ""),
   );
   for (const [key, val] of Object.entries(row)) {
     const nk = String(key).toLowerCase().replace(/\s+/g, "");
@@ -122,16 +127,67 @@ export function parseMstListFromExcelRows(jsonData) {
   return list;
 }
 
-function buildLookupUrl(mst) {
-  const normalized = normalizeMst(mst);
-  if (process.env.NODE_ENV === "development") {
-    return `/api/gdt/api/category/public/dsdkts/${encodeURIComponent(normalized)}/manager`;
+function buildDirectUrl(mst) {
+  return `${GDT_BASE}/api/category/public/dsdkts/${encodeURIComponent(mst)}/manager`;
+}
+
+function buildProxyUrl(mst) {
+  return `/api/gdt-tax-lookup?mst=${encodeURIComponent(mst)}`;
+}
+
+function buildDevProxyUrl(mst) {
+  return `/api/gdt/api/category/public/dsdkts/${encodeURIComponent(mst)}/manager`;
+}
+
+function isTimeoutError(err) {
+  const code = err?.code || "";
+  const msg = (err?.message || "").toLowerCase();
+  return (
+    code === "ECONNABORTED" ||
+    code === "ETIMEDOUT" ||
+    msg.includes("timeout") ||
+    msg.includes("timed out")
+  );
+}
+
+async function axiosGetWithRetry(url, config, retries = GDT_MAX_RETRIES) {
+  let lastError;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await axios.get(url, config);
+    } catch (err) {
+      lastError = err;
+      if (attempt >= retries || (!isTimeoutError(err) && err?.response)) {
+        throw err;
+      }
+      await delay(400 * (attempt + 1));
+    }
   }
-  return `/api/gdt-tax-lookup?mst=${encodeURIComponent(normalized)}`;
+  throw lastError;
+}
+
+function parseLookupResponse(normalized, response) {
+  if (response.status === 404) {
+    return { mst: normalized, error: "Không tìm thấy MST" };
+  }
+  if (response.status < 200 || response.status >= 300) {
+    return {
+      mst: normalized,
+      error: `HTTP ${response.status}`,
+    };
+  }
+
+  const data = response.data;
+  if (!data || typeof data !== "object") {
+    return { mst: normalized, error: "Dữ liệu trả về không hợp lệ" };
+  }
+  return { ...data, mst: data.mst || normalized };
 }
 
 /**
  * Tra cứu một MST trên API công khai GDT.
+ * Ưu tiên gọi thẳng (giống Postman, IP máy bạn) — GDT đã mở CORS localhost.
+ * Fallback proxy khi CORS/network fail.
  */
 export async function lookupGdtTaxStatus(mst) {
   const normalized = normalizeMst(mst);
@@ -139,37 +195,53 @@ export async function lookupGdtTaxStatus(mst) {
     return { mst: "", error: "MST không hợp lệ" };
   }
 
-  try {
-    const response = await axios.get(buildLookupUrl(normalized), {
-      headers: {
-        Accept: "application/json, text/plain, */*",
-        Referer: GDT_REFERER,
-        "User-Agent": GDT_USER_AGENT,
-      },
-      timeout: 15000,
-      validateStatus: () => true,
-    });
+  const commonConfig = {
+    headers: {
+      Accept: "application/json, text/plain, */*",
+      "Cache-Control": "no-cache",
+      Pragma: "no-cache",
+    },
+    timeout: GDT_TIMEOUT_MS,
+    validateStatus: () => true,
+    withCredentials: false,
+  };
 
-    if (response.status === 404) {
-      return { mst: normalized, error: "Không tìm thấy MST" };
-    }
-    if (response.status < 200 || response.status >= 300) {
+  try {
+    // 1) Gọi thẳng GDT — cùng đường với curl/Postman trên máy bạn
+    const direct = await axiosGetWithRetry(buildDirectUrl(normalized), {
+      ...commonConfig,
+      headers: {
+        ...commonConfig.headers,
+        Referer: GDT_REFERER,
+      },
+    });
+    return parseLookupResponse(normalized, direct);
+  } catch (directErr) {
+    // 2) Fallback proxy (dev CRA hoặc serverless production)
+    try {
+      const proxyUrl =
+        process.env.NODE_ENV === "development"
+          ? buildDevProxyUrl(normalized)
+          : buildProxyUrl(normalized);
+
+      const proxied = await axiosGetWithRetry(proxyUrl, {
+        ...commonConfig,
+        headers: {
+          ...commonConfig.headers,
+          "User-Agent": GDT_USER_AGENT,
+          Referer: GDT_REFERER,
+        },
+      });
+      return parseLookupResponse(normalized, proxied);
+    } catch (proxyErr) {
+      const err = proxyErr || directErr;
       return {
         mst: normalized,
-        error: `HTTP ${response.status}`,
+        error: isTimeoutError(err)
+          ? `Timeout sau ${GDT_TIMEOUT_MS / 1000}s — thử lại hoặc giảm số request song song`
+          : err?.message || "Lỗi kết nối API GDT",
       };
     }
-
-    const data = response.data;
-    if (!data || typeof data !== "object") {
-      return { mst: normalized, error: "Dữ liệu trả về không hợp lệ" };
-    }
-    return { ...data, mst: data.mst || normalized };
-  } catch (err) {
-    return {
-      mst: normalized,
-      error: err?.message || "Lỗi kết nối API GDT",
-    };
   }
 }
 
@@ -178,14 +250,12 @@ export function delay(ms) {
 }
 
 /**
- * Tra cứu danh sách MST — chạy song song theo concurrency (mặc định 8).
- * @param {number} options.concurrency - Số request đồng thời (1–20)
- * @param {number} options.delayMs - Nghỉ thêm sau mỗi request (ms), mặc định 0
+ * Tra cứu danh sách MST — chạy song song theo concurrency (mặc định 4).
  */
 export async function lookupGdtTaxStatusBatch(mstList, options = {}) {
   const concurrency = Math.min(
     20,
-    Math.max(1, Number(options.concurrency) || 8)
+    Math.max(1, Number(options.concurrency) || 4),
   );
   const delayMs = Math.max(0, Number(options.delayMs) || 0);
   const onProgress = options.onProgress;
@@ -219,9 +289,8 @@ export async function lookupGdtTaxStatusBatch(mstList, options = {}) {
     }
   };
 
-  const workers = Array.from(
-    { length: Math.min(concurrency, total) },
-    () => worker()
+  const workers = Array.from({ length: Math.min(concurrency, total) }, () =>
+    worker(),
   );
   await Promise.all(workers);
   return results;
