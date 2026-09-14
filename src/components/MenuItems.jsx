@@ -47,4 +47,10 @@ export const MenuItems = [
     cName: "dropdown-link",
     icon: "icon-sub fa-regular fa-circle",
   },
+  {
+    title: "Tra cứu hoạt động hoá đơn",
+    path: "/tra-cuu-hoat-dong-hoa-don",
+    cName: "dropdown-link",
+    icon: "icon-sub fa-regular fa-circle",
+  },
 ];

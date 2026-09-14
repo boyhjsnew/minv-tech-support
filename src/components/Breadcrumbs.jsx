@@ -10,6 +10,7 @@ const breadcrumbLabels = {
   "/tra-cuu-tinh-trang-mst": "Tra cứu tình trạng MST (GDT)",
   "/tra-cuu-thong-diep": "Tra cứu thông điệp MVAN",
   "/tao-don-vi-tinh": "Tạo đơn vị tính hàng loạt",
+  "/tra-cuu-hoat-dong-hoa-don": "Tra cứu hoạt động hoá đơn",
   "/branchreport": "Báo cáo chi nhánh",
   "/systemreport": "Báo cáo toàn hệ thống",
   "/xoa-cache-ky": "Gửi mail hàng loạt VPĐKĐĐ",

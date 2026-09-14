@@ -25,6 +25,7 @@ import Support from "./page/Support";
 import GdtTaxStatusLookup from "./page/GdtTaxStatusLookup";
 import CheckMessageMvanLookup from "./page/CheckMessageMvanLookup";
 import CreateUnitBulk from "./page/CreateUnitBulk";
+import InvoiceActivityLookup from "./page/InvoiceActivityLookup";
 import RepxImageExtractor from "./page/RepxImageExtractor";
 
 const Layout = () => {
@@ -111,6 +112,10 @@ const router = createBrowserRouter([
       {
         path: "/tao-don-vi-tinh",
         element: <CreateUnitBulk />,
+      },
+      {
+        path: "/tra-cuu-hoat-dong-hoa-don",
+        element: <InvoiceActivityLookup />,
       },
       {
         path: "/doc-file-repx",
