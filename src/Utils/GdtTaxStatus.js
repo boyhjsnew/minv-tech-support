@@ -278,6 +278,7 @@ export async function lookupGdtTaxStatusBatch(mstList, options = {}) {
         onProgress({
           current: completed,
           total,
+          index: i,
           mst,
           row: results[i],
         });
