@@ -9,6 +9,7 @@ import { useSearchParams } from "react-router-dom";
 import GetTokenCRM from "../Utils/GetTokenCRM";
 import ResetPasswordNewApp from "../Utils/ResetPasswordNewApp";
 import { Dropdown } from "primereact/dropdown";
+import { MultiSelect } from "primereact/multiselect";
 
 // Ẩn chức năng xoá chứng từ TNCN (đặt true để hiện lại)
 const SHOW_TNCN_DELETE = false;
@@ -240,7 +241,7 @@ const Support = () => {
 
   // States for "Kiểm tra đang gửi hàng loạt" tab
   const [checkTaxCode, setCheckTaxCode] = useState("");
-  const [checkRegisterInvoiceId, setCheckRegisterInvoiceId] = useState("");
+  const [checkRegisterInvoiceIds, setCheckRegisterInvoiceIds] = useState([]);
   const [checkRegisterList, setCheckRegisterList] = useState([]);
   const [loadingCheckRegisterList, setLoadingCheckRegisterList] =
     useState(false);
@@ -1909,7 +1910,7 @@ const Support = () => {
     }
     setLoadingCheckRegisterList(true);
     setCheckRegisterList([]);
-    setCheckRegisterInvoiceId("");
+    setCheckRegisterInvoiceIds([]);
     const domain = taxCodeInput.endsWith("-998")
       ? ".minvoice.site"
       : ".minvoice.app";
@@ -1983,7 +1984,9 @@ const Support = () => {
   // --- Kiểm tra đang gửi hàng loạt: lấy danh sách hóa đơn sendTaxStatus=2,3 (đã ký + đang gửi CQT)
   const handleFetchSendingList = async () => {
     const tax = (checkTaxCode || "").trim().replace(/-/g, "");
-    const regId = (checkRegisterInvoiceId || "").trim();
+    const regIds = (checkRegisterInvoiceIds || [])
+      .map((id) => String(id || "").trim())
+      .filter(Boolean);
     if (!tax) {
       toast.error(
         <ToastNotify status={-1} message="Vui lòng nhập mã số thuế" />,
@@ -1991,11 +1994,11 @@ const Support = () => {
       );
       return;
     }
-    if (!regId) {
+    if (!regIds.length) {
       toast.error(
         <ToastNotify
           status={-1}
-          message="Vui lòng chọn ký hiệu (tờ khai đăng ký)"
+          message="Vui lòng chọn ít nhất 1 ký hiệu (tờ khai đăng ký)"
         />,
         { style: styleError },
       );
@@ -2026,25 +2029,36 @@ const Support = () => {
     };
     try {
       let allItems = [];
-      let skipCount = 0;
-      let totalCount = null;
-      do {
-        const url = `${baseUrl}/api/api/app/invoice?maxResultCount=${PAGE_SIZE}&skipCount=${skipCount}&sendTaxStatus=${CHECK_SENDING_TAX_STATUSES}&registerInvoiceId=${encodeURIComponent(regId)}&loadAll=false`;
-        const res = await axios.get(url, { headers, withCredentials: true });
-        const data = res.data;
-        const items = Array.isArray(data.items) ? data.items : [];
-        allItems = allItems.concat(items);
-        if (totalCount == null && typeof data.totalCount === "number")
-          totalCount = data.totalCount;
-        if (items.length < PAGE_SIZE) break;
-        skipCount += PAGE_SIZE;
-        setCheckInvoiceList([...allItems]);
-      } while (totalCount == null || allItems.length < totalCount);
+      const seenIds = new Set();
+
+      for (let r = 0; r < regIds.length; r += 1) {
+        const regId = regIds[r];
+        let skipCount = 0;
+        let totalCount = null;
+        do {
+          const url = `${baseUrl}/api/api/app/invoice?maxResultCount=${PAGE_SIZE}&skipCount=${skipCount}&sendTaxStatus=${CHECK_SENDING_TAX_STATUSES}&registerInvoiceId=${encodeURIComponent(regId)}&loadAll=false`;
+          const res = await axios.get(url, { headers, withCredentials: true });
+          const data = res.data;
+          const items = Array.isArray(data.items) ? data.items : [];
+          for (const item of items) {
+            const key = item?.id || item?.invoiceId || `${regId}-${item?.invoiceNumber}-${item?.invoiceSerial}`;
+            if (seenIds.has(key)) continue;
+            seenIds.add(key);
+            allItems.push(item);
+          }
+          if (totalCount == null && typeof data.totalCount === "number")
+            totalCount = data.totalCount;
+          if (items.length < PAGE_SIZE) break;
+          skipCount += PAGE_SIZE;
+          setCheckInvoiceList([...allItems]);
+        } while (totalCount == null || skipCount < totalCount);
+      }
+
       setCheckInvoiceList(allItems);
       toast.success(
         <ToastNotify
           status={0}
-          message={`Đã lấy ${allItems.length} hóa đơn (gửi CQT: đã ký + đang gửi, sendTaxStatus=${CHECK_SENDING_TAX_STATUSES})`}
+          message={`Đã lấy ${allItems.length} hóa đơn từ ${regIds.length} ký hiệu (gửi CQT: đã ký + đang gửi, sendTaxStatus=${CHECK_SENDING_TAX_STATUSES})`}
         />,
         { style: styleSuccess },
       );
@@ -2695,10 +2709,10 @@ const Support = () => {
           <h1 style={{ marginBottom: "20px" }}>Kiểm tra đang gửi hàng loạt</h1>
           <p style={{ marginBottom: "16px", color: "#666", fontSize: "14px" }}>
             Lấy tài khoản 2.0 và mở link đăng nhập → đăng nhập trên trang 2.0
-            (cookie/session lấy theo link đó) → Lấy danh sách ký hiệu và chọn tờ
-            khai đăng ký → Lấy danh sách hóa đơn <strong>đã ký</strong> và{" "}
-            <strong>đang gửi CQT</strong> (<code>sendTaxStatus=2,3</code>) →
-            Kiểm tra hàng loạt qua m-gate-way.
+            (cookie/session lấy theo link đó) → Lấy danh sách ký hiệu và chọn
+            một hoặc nhiều tờ khai đăng ký → Lấy danh sách hóa đơn{" "}
+            <strong>đã ký</strong> và <strong>đang gửi CQT</strong> (
+            <code>sendTaxStatus=2,3</code>) → Kiểm tra hàng loạt qua m-gate-way.
           </p>
           <div
             style={{
@@ -2772,7 +2786,7 @@ const Support = () => {
                   fontSize: "14px",
                 }}
               >
-                Ký hiệu (tờ khai đăng ký)
+                Ký hiệu (tờ khai đăng ký) — chọn nhiều
               </label>
               <div
                 style={{
@@ -2807,39 +2821,79 @@ const Support = () => {
                     ? "Đang tải..."
                     : "Lấy danh sách ký hiệu"}
                 </button>
+                {checkRegisterList.length > 0 && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setCheckRegisterInvoiceIds(
+                          checkRegisterList.map((r) => r.id),
+                        )
+                      }
+                      style={{
+                        padding: "8px 12px",
+                        backgroundColor: "#fff",
+                        color: "#007bff",
+                        border: "1px solid #007bff",
+                        borderRadius: "4px",
+                        fontSize: "13px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Chọn tất cả
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCheckRegisterInvoiceIds([])}
+                      style={{
+                        padding: "8px 12px",
+                        backgroundColor: "#fff",
+                        color: "#6c757d",
+                        border: "1px solid #ced4da",
+                        borderRadius: "4px",
+                        fontSize: "13px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Bỏ chọn
+                    </button>
+                  </>
+                )}
               </div>
-              <div style={{ marginTop: "12px", maxWidth: "480px" }}>
-                <Dropdown
+              <div style={{ marginTop: "12px", maxWidth: "560px" }}>
+                <MultiSelect
                   inputId="checkRegisterInvoice"
-                  value={
-                    checkRegisterInvoiceId &&
-                    checkRegisterDropdownOptions.some(
-                      (o) => o.value === checkRegisterInvoiceId,
-                    )
-                      ? checkRegisterInvoiceId
-                      : null
-                  }
+                  value={checkRegisterInvoiceIds}
                   options={checkRegisterDropdownOptions}
-                  onChange={(e) => setCheckRegisterInvoiceId(e.value ?? "")}
+                  onChange={(e) =>
+                    setCheckRegisterInvoiceIds(
+                      Array.isArray(e.value) ? e.value : [],
+                    )
+                  }
                   optionLabel="label"
                   optionValue="value"
                   placeholder={
                     checkRegisterList.length === 0
                       ? "Lấy danh sách ký hiệu trước..."
-                      : "Chọn ký hiệu (tờ khai đăng ký)..."
+                      : "Chọn một hoặc nhiều ký hiệu..."
                   }
                   filter
                   filterBy="label,value"
                   filterPlaceholder="Tìm theo tên ký hiệu hoặc ID..."
+                  display="chip"
                   showClear
+                  showSelectAll
+                  selectAllLabel="Chọn tất cả"
                   emptyMessage="Chưa có dữ liệu — bấm “Lấy danh sách ký hiệu”"
                   emptyFilterMessage="Không tìm thấy ký hiệu phù hợp"
                   disabled={
                     checkRegisterList.length === 0 || loadingCheckRegisterList
                   }
                   className="w-full"
-                  panelStyle={{ maxHeight: "320px" }}
+                  panelStyle={{ maxHeight: "360px" }}
                   style={{ width: "100%" }}
+                  maxSelectedLabels={3}
+                  selectedItemsLabel="{0} ký hiệu đã chọn"
                 />
                 {checkRegisterList.length > 0 && (
                   <small
@@ -2850,12 +2904,10 @@ const Support = () => {
                       fontSize: "12px",
                     }}
                   >
-                    <i
-                      className="pi pi-filter"
-                      style={{ marginRight: "4px" }}
-                    />
-                    Gõ trong ô tìm kiếm của dropdown để lọc nhanh (
-                    {checkRegisterList.length} ký hiệu).
+                    Đã chọn{" "}
+                    <strong>{checkRegisterInvoiceIds.length}</strong> /{" "}
+                    {checkRegisterList.length} ký hiệu. Có thể tích nhiều hoặc
+                    dùng “Chọn tất cả”.
                   </small>
                 )}
               </div>

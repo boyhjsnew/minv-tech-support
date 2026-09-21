@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const GDT_BASE = "https://hoadondientu.gdt.gov.vn";
+const GDT_BASE = "https://test-qlhd.minvoice.com.vn";
 const GDT_REFERER = "https://test-qlhd.minvoice.com.vn/";
 const GDT_USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36";

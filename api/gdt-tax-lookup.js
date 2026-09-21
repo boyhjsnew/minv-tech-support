@@ -23,7 +23,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "Missing mst parameter" });
   }
 
-  const targetUrl = `https://hoadondientu.gdt.gov.vn/api/category/public/dsdkts/${encodeURIComponent(mst)}/manager`;
+  const targetUrl = `https://test-qlhd.minvoice.com.vn/api/category/public/dsdkts/${encodeURIComponent(mst)}/manager`;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 55000);
 

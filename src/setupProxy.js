@@ -5,7 +5,7 @@ module.exports = function (app) {
   app.use(
     "/api/gdt",
     createProxyMiddleware({
-      target: "https://hoadondientu.gdt.gov.vn",
+      target: "https://test-qlhd.minvoice.com.vn",
       changeOrigin: true,
       secure: true,
       timeout: 60000,

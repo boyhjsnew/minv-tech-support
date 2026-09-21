@@ -233,7 +233,7 @@ function GdtTaxStatusLookup() {
       <section className="gdt-card">
         <div className="gdt-card-head">
           <h2>Dữ liệu đầu vào</h2>
-          <span>Nguồn: hoadondientu.gdt.gov.vn</span>
+          <span>Nguồn: test-qlhd.minvoice.com.vn</span>
         </div>
         <div className="gdt-card-body">
           <div className="gdt-drop">
