@@ -44,6 +44,11 @@ function getStatusShort(row) {
 
 function GdtTaxStatusLookup() {
   const fileInputRef = useRef(null);
+  const resultsPanelRef = useRef(null);
+  const loadingRef = useRef(false);
+  /** Dữ liệu sẵn sàng xuất — ghi ngay khi tra cứu xong (không phụ thuộc timing React state) */
+  const exportReadyRef = useRef([]);
+
   const [mstList, setMstList] = useState([]);
   const [results, setResults] = useState([]);
   const [fileName, setFileName] = useState("");
@@ -52,10 +57,17 @@ function GdtTaxStatusLookup() {
   const [progress, setProgress] = useState({ current: 0, total: 0, mst: "" });
   const [error, setError] = useState("");
   const [concurrency, setConcurrency] = useState(4);
+  const [lookupDone, setLookupDone] = useState(false);
+
+  const readyResults = useMemo(
+    () => results.filter((r) => r && !r.pending),
+    [results],
+  );
+  const canExport = !loading && lookupDone && readyResults.length > 0;
 
   const step1Done = mstList.length > 0;
-  const step2Done = results.some((r) => r && !r.pending);
-  const step3Done = results.length > 0 && !loading && results.every((r) => !r.pending);
+  const step2Done = readyResults.length > 0;
+  const step3Done = canExport && !loading;
 
   const stats = useMemo(() => {
     let ok = 0;
@@ -64,10 +76,10 @@ function GdtTaxStatusLookup() {
     let pending = 0;
     for (const row of results) {
       const tone = getStatusTone(row);
-      if (tone === "ok") ok += 1;
+      if (row?.pending) pending += 1;
+      else if (tone === "ok") ok += 1;
       else if (tone === "warn") warn += 1;
       else if (tone === "fail") fail += 1;
-      else if (row?.pending) pending += 1;
     }
     return { ok, warn, fail, pending, total: results.length };
   }, [results]);
@@ -100,6 +112,8 @@ function GdtTaxStatusLookup() {
 
         setMstList(list);
         setResults([]);
+        exportReadyRef.current = [];
+        setLookupDone(false);
       } catch (err) {
         console.error(err);
         setError("Không đọc được file Excel.");
@@ -120,6 +134,8 @@ function GdtTaxStatusLookup() {
     if (!file) return;
     setFileName(file.name);
     setResults([]);
+    exportReadyRef.current = [];
+    setLookupDone(false);
     parseExcelFile(file);
   };
 
@@ -130,12 +146,33 @@ function GdtTaxStatusLookup() {
     XLSX.writeFile(wb, "mau_tra_cuu_tinh_trang_mst.xlsx");
   };
 
+  const commitExportReady = (rows) => {
+    const finalRows = (rows || []).map((r, i) =>
+      r
+        ? { ...r, pending: false }
+        : {
+            mst: mstList[i] || "",
+            pending: false,
+            error: "Không có kết quả",
+          },
+    );
+    exportReadyRef.current = finalRows;
+    setResults(finalRows);
+    setLookupDone(finalRows.length > 0);
+    return finalRows;
+  };
+
   const handleLookup = async () => {
+    if (loadingRef.current) return;
     if (!mstList.length) {
       setError("Vui lòng import file Excel chứa danh sách MST.");
       return;
     }
+
+    loadingRef.current = true;
     setLoading(true);
+    setLookupDone(false);
+    exportReadyRef.current = [];
     setError("");
     setProgress({ current: 0, total: mstList.length, mst: "" });
     setResults(
@@ -153,41 +190,100 @@ function GdtTaxStatusLookup() {
         concurrency,
         delayMs: 0,
         onProgress: ({ current, total, index, mst, row }) => {
-          setProgress({ current, total, mst });
-          setResults((prev) => {
-            const next = [...prev];
-            if (index >= 0 && index < next.length) {
-              next[index] = { ...row, pending: false };
-            }
-            return next;
-          });
+          try {
+            setProgress({ current, total, mst });
+            setResults((prev) => {
+              const next = [...prev];
+              if (index >= 0 && index < next.length) {
+                next[index] = { ...row, pending: false };
+              }
+              return next;
+            });
+          } catch (e) {
+            console.error("onProgress error", e);
+          }
         },
       });
-      setResults(rows.map((r) => ({ ...r, pending: false })));
+      commitExportReady(rows);
+      setTimeout(() => {
+        resultsPanelRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      }, 50);
     } catch (err) {
+      console.error(err);
       setError(err?.message || "Lỗi khi tra cứu.");
+      // Vẫn cho xuất phần đã có + dòng lỗi còn lại
+      setResults((prev) => {
+        const finalized = prev.map((r) =>
+          r?.pending
+            ? {
+                ...r,
+                pending: false,
+                error: r.error || err?.message || "Lỗi khi tra cứu",
+              }
+            : { ...r, pending: false },
+        );
+        exportReadyRef.current = finalized;
+        return finalized;
+      });
+      setLookupDone(true);
     } finally {
+      loadingRef.current = false;
       setLoading(false);
     }
   };
 
   const handleExportExcel = () => {
-    const ready = results.filter((r) => r && !r.pending);
-    if (!ready.length) {
-      setError("Chưa có kết quả để xuất.");
+    if (loadingRef.current) {
+      setError("Đang tra cứu — đợi xong rồi xuất Excel.");
       return;
     }
-    const exportRows = ready.map(mapGdtRowToExport);
-    const ws = XLSX.utils.json_to_sheet(exportRows);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Tình trạng MST");
-    const name = `tra_cuu_tinh_trang_mst_${new Date().toISOString().slice(0, 10)}.xlsx`;
-    XLSX.writeFile(wb, name);
+    const ready =
+      (exportReadyRef.current && exportReadyRef.current.length
+        ? exportReadyRef.current
+        : results.filter((r) => r && !r.pending)) || [];
+    if (!ready.length) {
+      setError("Chưa có kết quả để xuất. Hãy tra cứu xong trước.");
+      return;
+    }
+    try {
+      const exportRows = ready.map(mapGdtRowToExport);
+      const ws = XLSX.utils.json_to_sheet(exportRows);
+      ws["!cols"] = [
+        { wch: 16 },
+        { wch: 55 },
+        { wch: 40 },
+        { wch: 45 },
+        { wch: 30 },
+      ];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Tình trạng MST");
+      const name = `tra_cuu_tinh_trang_mst_${new Date()
+        .toISOString()
+        .slice(0, 10)}.xlsx`;
+      XLSX.writeFile(wb, name);
+      setError("");
+    } catch (err) {
+      console.error(err);
+      setError(err?.message || "Không xuất được file Excel.");
+    }
   };
 
   const resetAll = () => {
+    if (loadingRef.current) return;
+    const hasData = mstList.length > 0 || results.length > 0;
+    if (
+      hasData &&
+      !window.confirm("Xóa toàn bộ file đã import và kết quả tra cứu?")
+    ) {
+      return;
+    }
     setMstList([]);
     setResults([]);
+    exportReadyRef.current = [];
+    setLookupDone(false);
     setFileName("");
     setError("");
     setProgress({ current: 0, total: 0, mst: "" });
@@ -204,15 +300,13 @@ function GdtTaxStatusLookup() {
       <header className="gdt-hero">
         <h1>Tra cứu tình trạng MST (GDT)</h1>
         <p>
-          Import danh sách mã số thuế, tra cứu trực tiếp từ hệ thống hóa đơn
-          điện tử Tổng cục Thuế. Kết quả cập nhật realtime và có thể xuất Excel.
+          Import danh sách mã số thuế → Tra cứu → khi xong bấm{" "}
+          <strong>Xuất Excel</strong> để tải kết quả.
         </p>
       </header>
 
       <div className="gdt-steps">
-        <div
-          className={`gdt-step ${step1Done ? "done" : "active"}`}
-        >
+        <div className={`gdt-step ${step1Done ? "done" : "active"}`}>
           <span className="gdt-step-num">1</span>
           Import Excel MST
         </div>
@@ -224,7 +318,7 @@ function GdtTaxStatusLookup() {
           <span className="gdt-step-num">2</span>
           Tra cứu GDT
         </div>
-        <div className={`gdt-step ${step3Done ? "done" : ""}`}>
+        <div className={`gdt-step ${step3Done ? "done" : canExport ? "active" : ""}`}>
           <span className="gdt-step-num">3</span>
           Xem & xuất kết quả
         </div>
@@ -241,7 +335,10 @@ function GdtTaxStatusLookup() {
             <p>
               Cột <em>Mã số thuế</em> (hoặc cột đầu). Hệ thống tự loại trùng.
             </p>
-            <div className="gdt-actions" style={{ justifyContent: "center", marginTop: 0 }}>
+            <div
+              className="gdt-actions"
+              style={{ justifyContent: "center", marginTop: 0 }}
+            >
               <button
                 type="button"
                 className="gdt-btn gdt-btn-secondary"
@@ -289,9 +386,14 @@ function GdtTaxStatusLookup() {
               type="button"
               className="gdt-btn gdt-btn-success"
               onClick={handleExportExcel}
-              disabled={!results.some((r) => r && !r.pending)}
+              disabled={!canExport}
+              title={
+                canExport
+                  ? `Xuất ${readyResults.length} dòng kết quả`
+                  : "Tra cứu xong mới xuất được"
+              }
             >
-              Xuất Excel
+              Xuất Excel{canExport ? ` (${readyResults.length})` : ""}
             </button>
             <button
               type="button"
@@ -301,7 +403,10 @@ function GdtTaxStatusLookup() {
             >
               Làm mới
             </button>
-            <label className="gdt-concurrency" title="Số request gọi song song (1–20)">
+            <label
+              className="gdt-concurrency"
+              title="Số request gọi song song (1–20)"
+            >
               Song song
               <input
                 type="number"
@@ -339,26 +444,39 @@ function GdtTaxStatusLookup() {
         </div>
       </section>
 
-      <section className="gdt-panel">
+      <section className="gdt-panel" ref={resultsPanelRef}>
         <div className="gdt-panel-head">
           <h3>Kết quả tra cứu</h3>
-          {results.length > 0 && (
-            <div className="gdt-stats">
-              <span className="gdt-stat muted">{stats.total} MST</span>
-              {stats.ok > 0 && (
-                <span className="gdt-stat ok">{stats.ok} hoạt động</span>
-              )}
-              {stats.warn > 0 && (
-                <span className="gdt-stat warn">{stats.warn} cảnh báo</span>
-              )}
-              {stats.fail > 0 && (
-                <span className="gdt-stat err">{stats.fail} lỗi/ngừng</span>
-              )}
-              {stats.pending > 0 && (
-                <span className="gdt-stat muted">{stats.pending} đang chạy</span>
-              )}
-            </div>
-          )}
+          <div className="gdt-stats">
+            {results.length > 0 && (
+              <>
+                <span className="gdt-stat muted">{stats.total} MST</span>
+                {stats.ok > 0 && (
+                  <span className="gdt-stat ok">{stats.ok} hoạt động</span>
+                )}
+                {stats.warn > 0 && (
+                  <span className="gdt-stat warn">{stats.warn} cảnh báo</span>
+                )}
+                {stats.fail > 0 && (
+                  <span className="gdt-stat err">{stats.fail} lỗi/ngừng</span>
+                )}
+                {stats.pending > 0 && (
+                  <span className="gdt-stat muted">
+                    {stats.pending} đang chạy
+                  </span>
+                )}
+              </>
+            )}
+            <button
+              type="button"
+              className="gdt-btn gdt-btn-success"
+              onClick={handleExportExcel}
+              disabled={!canExport}
+              style={{ padding: "0.45rem 0.85rem", fontSize: "0.82rem" }}
+            >
+              Xuất Excel{canExport ? ` (${readyResults.length})` : ""}
+            </button>
+          </div>
         </div>
 
         {results.length === 0 ? (

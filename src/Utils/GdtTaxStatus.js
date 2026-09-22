@@ -67,16 +67,16 @@ export function formatGdtAddress(data) {
 export function mapGdtRowToExport(data) {
   if (!data || data.error) {
     return {
-      "Tình trạng": data?.error || "Không tra cứu được",
       "Mã số thuế": data?.mst || "",
+      "Tình trạng": data?.error || "Không tra cứu được",
       "Tên tổ chức, cá nhân": "",
       "Địa chỉ": "",
       "CQT quản lý": "",
     };
   }
   return {
-    "Tình trạng": getTthaiLabel(data.tthai),
     "Mã số thuế": data.mst || "",
+    "Tình trạng": getTthaiLabel(data.tthai),
     "Tên tổ chức, cá nhân": data.tennnt || "",
     "Địa chỉ": formatGdtAddress(data),
     "CQT quản lý": data.tencqt || "",
@@ -275,13 +275,17 @@ export async function lookupGdtTaxStatusBatch(mstList, options = {}) {
       completed += 1;
 
       if (onProgress) {
-        onProgress({
-          current: completed,
-          total,
-          index: i,
-          mst,
-          row: results[i],
-        });
+        try {
+          onProgress({
+            current: completed,
+            total,
+            index: i,
+            mst,
+            row: results[i],
+          });
+        } catch (err) {
+          console.error("lookupGdtTaxStatusBatch onProgress error:", err);
+        }
       }
 
       if (delayMs > 0) {
