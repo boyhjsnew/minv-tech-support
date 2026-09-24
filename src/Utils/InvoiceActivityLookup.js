@@ -109,13 +109,19 @@ function formatYmd(date) {
   return `${y}-${m}-${d}`;
 }
 
-/** Khoảng 3 tháng gần nhất (tính đến hôm nay). */
-export function getLast3MonthsRange(now = new Date()) {
+/** Khoảng N tháng gần nhất (tính đến hôm nay). */
+export function getLastMonthsRange(months = 3, now = new Date()) {
+  const n = months === 6 ? 6 : 3;
   const denngay = formatYmd(now);
   const from = new Date(now);
-  from.setMonth(from.getMonth() - 3);
+  from.setMonth(from.getMonth() - n);
   const tuNgay = formatYmd(from);
-  return { tuNgay, denngay };
+  return { tuNgay, denngay, months: n };
+}
+
+/** @deprecated dùng getLastMonthsRange */
+export function getLast3MonthsRange(now = new Date()) {
+  return getLastMonthsRange(3, now);
 }
 
 function buildAuthHeader(userToken) {
@@ -243,10 +249,10 @@ export async function hasInvoicesInRange(
   return { has: count > 0, count, error: "" };
 }
 
-/** .app có HĐ → 2.0, .com.vn có HĐ → 1.0 */
+/** .app / .site có serial → 2.0, .com.vn có serial → 1.0 */
 export function domainToInvoiceVersion(domain) {
   const d = String(domain || "").toLowerCase();
-  if (d.includes(".minvoice.app")) return "2.0";
+  if (d.includes(".minvoice.app") || d.includes(".minvoice.site")) return "2.0";
   if (d.includes(".minvoice.com.vn")) return "1.0";
   return "";
 }
@@ -260,6 +266,8 @@ function emptyActivityRow(mst, extra = {}) {
     isActive: false,
     domain: "",
     invoiceVersion: "",
+    lookMode: extra.lookMode || "invoices",
+    months: extra.months || 3,
     pending: false,
     error: "",
     ...extra,
@@ -268,14 +276,19 @@ function emptyActivityRow(mst, extra = {}) {
 
 /**
  * Tra cứu hoạt động HĐ cho 1 MST.
+ * lookMode:
+ *  - "invoices": lấy serial C26 rồi check GetInvoices trong N tháng
+ *  - "series": chỉ cần lấy được serial → xác định 1.0 / 2.0
  */
 export async function lookupInvoiceActivity(taxCode, options = {}) {
   const tax = normalizeMst(taxCode);
   const authToken = options.authToken || "";
-  const range = options.range || getLast3MonthsRange();
+  const lookMode = options.lookMode === "series" ? "series" : "invoices";
+  const months = Number(options.months) === 6 ? 6 : 3;
+  const range = options.range || getLastMonthsRange(months);
 
   if (!tax) {
-    return emptyActivityRow("", { error: "MST không hợp lệ" });
+    return emptyActivityRow("", { error: "MST không hợp lệ", lookMode, months });
   }
 
   try {
@@ -283,19 +296,48 @@ export async function lookupInvoiceActivity(taxCode, options = {}) {
     if (!seriesRes.ok) {
       return emptyActivityRow(tax, {
         domain: seriesRes.domain,
+        lookMode,
+        months,
         error: seriesRes.error || "Không lấy được ký hiệu",
       });
     }
 
-    // Chỉ giữ ký hiệu có C26 (1C26__, 2C26__); không C26 → bỏ qua, không gọi GetInvoices
-    const seriesC26 = (seriesRes.series || [])
+    const allSeries = (seriesRes.series || [])
       .map((s) => String(s.khhdon || "").trim())
-      .filter((kh) => kh && isSeriesC26(kh));
-
+      .filter(Boolean);
+    const seriesC26 = allSeries.filter((kh) => isSeriesC26(kh));
     const uniqueSeries = [...new Set(seriesC26)];
+    const invoiceVersion = domainToInvoiceVersion(seriesRes.domain);
 
+    // Chỉ cần lấy serial là đủ xác định phiên bản
+    if (lookMode === "series") {
+      const seriesText = uniqueSeries.length
+        ? uniqueSeries.join(", ")
+        : allSeries.join(", ");
+      return {
+        mst: tax,
+        seriesC26: uniqueSeries,
+        seriesText,
+        hasInvoiceLast3Months: false,
+        isActive: allSeries.length > 0,
+        domain: seriesRes.domain,
+        invoiceVersion,
+        lookMode,
+        months,
+        pending: false,
+        error: "",
+        range,
+      };
+    }
+
+    // Chỉ giữ ký hiệu có C26 (1C26__, 2C26__); không C26 → bỏ qua, không gọi GetInvoices
     if (uniqueSeries.length === 0) {
-      return emptyActivityRow(tax, { domain: seriesRes.domain });
+      return emptyActivityRow(tax, {
+        domain: seriesRes.domain,
+        lookMode,
+        months,
+        invoiceVersion: "",
+      });
     }
 
     let hasInvoice = false;
@@ -320,9 +362,6 @@ export async function lookupInvoiceActivity(taxCode, options = {}) {
     }
 
     const isActive = uniqueSeries.length > 0 && hasInvoice;
-    const invoiceVersion = hasInvoice
-      ? domainToInvoiceVersion(seriesRes.domain)
-      : "";
 
     return {
       mst: tax,
@@ -331,13 +370,17 @@ export async function lookupInvoiceActivity(taxCode, options = {}) {
       hasInvoiceLast3Months: hasInvoice,
       isActive,
       domain: seriesRes.domain,
-      invoiceVersion,
+      invoiceVersion: hasInvoice ? invoiceVersion : "",
+      lookMode,
+      months,
       pending: false,
       error: hasInvoice ? "" : invoiceError,
       range,
     };
   } catch (err) {
     return emptyActivityRow(tax, {
+      lookMode,
+      months,
       error: err?.message || "Lỗi không xác định",
     });
   }
@@ -379,16 +422,23 @@ export async function lookupInvoiceActivityBatch(mstList, options = {}) {
 }
 
 export function mapInvoiceActivityToExport(row) {
+  const months = Number(row?.months) === 6 ? 6 : 3;
+  const seriesOnly = row?.lookMode === "series";
+  const invoiceCol = seriesOnly
+    ? "Xuất hoá đơn (không kiểm tra)"
+    : `Xuất hoá đơn ${months} tháng gần nhất`;
   return {
     "Mã số thuế": row?.mst || "",
     "Danh sách ký hiệu C26 (1C26__/2C26__)": row?.pending
       ? "Đang tra cứu..."
       : row?.seriesText || "",
-    "Xuất hoá đơn 3 tháng gần nhất": row?.pending
+    [invoiceCol]: row?.pending
       ? "…"
-      : row?.hasInvoiceLast3Months
-        ? "Có"
-        : "Không",
+      : seriesOnly
+        ? "—"
+        : row?.hasInvoiceLast3Months
+          ? "Có"
+          : "Không",
     "Hoạt động hoá đơn": row?.pending
       ? "…"
       : row?.isActive
@@ -396,6 +446,9 @@ export function mapInvoiceActivityToExport(row) {
         : "Không",
     "Phiên bản hoá đơn": row?.pending ? "…" : row?.invoiceVersion || "",
     Domain: row?.pending ? "…" : row?.domain || "",
+    "Điều kiện": seriesOnly
+      ? "Chỉ lấy serial"
+      : `Xuất HĐ ${months} tháng`,
     "Ghi chú": row?.pending ? "Đang tra cứu..." : row?.error || "",
   };
 }

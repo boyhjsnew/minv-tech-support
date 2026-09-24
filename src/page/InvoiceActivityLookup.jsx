@@ -1,7 +1,7 @@
 import React, { useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import {
-  getLast3MonthsRange,
+  getLastMonthsRange,
   lookupInvoiceActivityBatch,
   mapInvoiceActivityToExport,
   parseMstListFromExcelRows,
@@ -20,8 +20,10 @@ function InvoiceActivityLookup() {
   const [error, setError] = useState("");
   const [concurrency, setConcurrency] = useState(3);
   const [authToken, setAuthToken] = useState("");
+  const [lookMode, setLookMode] = useState("invoices");
+  const [months, setMonths] = useState(3);
 
-  const range = getLast3MonthsRange();
+  const range = getLastMonthsRange(months);
 
   const parseExcelFile = (file) => {
     setParsing(true);
@@ -109,6 +111,8 @@ function InvoiceActivityLookup() {
         concurrency,
         authToken,
         range,
+        lookMode,
+        months,
         onProgress: ({ current, total, index, mst, row }) => {
           setProgress({ current, total, mst });
           setResults((prev) => {
@@ -161,23 +165,67 @@ function InvoiceActivityLookup() {
     <div style={{ padding: "6rem 2rem 2rem", maxWidth: "1100px", margin: "0 auto" }}>
       <h2 style={{ marginBottom: "8px" }}>Tra cứu hoạt động hoá đơn</h2>
       <p style={{ color: "#555", marginBottom: "12px", fontSize: "14px" }}>
-        Import Excel danh sách MST → lấy ký hiệu qua{" "}
-        <code>GetTypeInvoiceSeries</code> (chỉ lấy{" "}
-        <strong>1C26__</strong> / <strong>2C26__</strong>, ký hiệu không có{" "}
-        <strong>C26</strong> thì bỏ qua), nếu có thì gọi{" "}
-        <code>GetInvoices</code> trong 3 tháng gần nhất (
-        {range.tuNgay} → {range.denngay}). Thử lần lượt domain{" "}
-        <code>.minvoice.app</code> / <code>.minvoice.com.vn</code>.
+        Import Excel MST → lấy ký hiệu qua{" "}
+        <code>GetTypeInvoiceSeries</code> (ưu tiên{" "}
+        <strong>1C26__</strong> / <strong>2C26__</strong>). Chọn điều kiện bên
+        dưới. Domain: <code>.minvoice.app</code> /{" "}
+        <code>.minvoice.com.vn</code>.
       </p>
-      <p style={{ color: "#666", marginBottom: "20px", fontSize: "13px" }}>
-        MST 13 số: <code>.app</code> dùng dạng{" "}
-        <code>0313466783-004</code>, <code>.com.vn</code> dùng{" "}
-        <code>0313466783004</code> (tự bỏ dấu <code>-</code>).{" "}
-        <strong>Hoạt động hoá đơn = Có</strong> khi có ký hiệu C26 và đã xuất
-        hoá đơn trong 3 tháng gần nhất.{" "}
-        <strong>Phiên bản:</strong> .app có HĐ → 2.0, .com.vn có HĐ → 1.0.
-        Bảng dưới cập nhật realtime từng MST.
-      </p>
+
+      <div
+        style={{
+          display: "grid",
+          gap: "8px",
+          marginBottom: "16px",
+          padding: "12px 14px",
+          background: "#f6f9fc",
+          border: "1px solid #d7e3ee",
+          borderRadius: "8px",
+          maxWidth: "720px",
+          fontSize: "13px",
+        }}
+      >
+        <strong style={{ fontSize: "13px" }}>Điều kiện tra cứu</strong>
+        <label style={{ display: "flex", gap: "8px", alignItems: "flex-start" }}>
+          <input
+            type="radio"
+            name="lookMode"
+            value="invoices"
+            checked={lookMode === "invoices"}
+            onChange={() => setLookMode("invoices")}
+            disabled={loading}
+            style={{ marginTop: "3px" }}
+          />
+          <span>
+            Lấy ký hiệu + kiểm tra có xuất HĐ trong{" "}
+            <select
+              value={months}
+              onChange={(e) => setMonths(Number(e.target.value) === 6 ? 6 : 3)}
+              disabled={loading || lookMode !== "invoices"}
+              style={{ padding: "2px 6px" }}
+            >
+              <option value={3}>3 tháng</option>
+              <option value={6}>6 tháng</option>
+            </select>{" "}
+            gần nhất ({range.tuNgay} → {range.denngay})
+          </span>
+        </label>
+        <label style={{ display: "flex", gap: "8px", alignItems: "flex-start" }}>
+          <input
+            type="radio"
+            name="lookMode"
+            value="series"
+            checked={lookMode === "series"}
+            onChange={() => setLookMode("series")}
+            disabled={loading}
+            style={{ marginTop: "3px" }}
+          />
+          <span>
+            Chỉ cần lấy được serial → xác định phiên bản (.app = 2.0, .com.vn =
+            1.0), không gọi GetInvoices
+          </span>
+        </label>
+      </div>
 
       <div style={{ marginBottom: "14px" }}>
         <label style={{ fontSize: "13px", display: "block", marginBottom: "4px" }}>
@@ -323,7 +371,11 @@ function InvoiceActivityLookup() {
               <tr style={{ background: "#f5f5f5" }}>
                 <th style={thStyle}>Mã số thuế</th>
                 <th style={thStyle}>Ký hiệu C26 (1C26__/2C26__)</th>
-                <th style={thStyle}>Xuất HĐ 3 tháng gần nhất</th>
+                <th style={thStyle}>
+                  {lookMode === "series"
+                    ? "Xuất HĐ"
+                    : `Xuất HĐ ${months} tháng gần nhất`}
+                </th>
                 <th style={thStyle}>Hoạt động hoá đơn</th>
                 <th style={thStyle}>Phiên bản hoá đơn</th>
                 <th style={thStyle}>Domain</th>
@@ -343,7 +395,13 @@ function InvoiceActivityLookup() {
                       {exp["Danh sách ký hiệu C26 (1C26__/2C26__)"]}
                     </td>
                     <td style={rowStyle}>
-                      {exp["Xuất hoá đơn 3 tháng gần nhất"]}
+                      {lookMode === "series"
+                        ? "—"
+                        : row.pending
+                          ? "…"
+                          : row.hasInvoiceLast3Months
+                            ? "Có"
+                            : "Không"}
                     </td>
                     <td style={rowStyle}>{exp["Hoạt động hoá đơn"]}</td>
                     <td style={rowStyle}>{exp["Phiên bản hoá đơn"]}</td>
