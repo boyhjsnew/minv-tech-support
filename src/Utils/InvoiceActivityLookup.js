@@ -23,6 +23,33 @@ export function normalizeMst(value) {
     .replace(/[^0-9A-Za-z-]/g, "");
 }
 
+/** Chỉ lấy chữ số — để nhận diện MST 13 ký tự (có/không dấu -). */
+export function mstDigits(value) {
+  return normalizeMst(value).replace(/[^0-9]/g, "");
+}
+
+/**
+ * MST trên subdomain theo domain:
+ * - MST 13 số (vd 0313466783004 hoặc 0313466783-004):
+ *   .minvoice.app / .minvoice.site → 0313466783-004
+ *   .minvoice.com.vn → 0313466783004 (bỏ dấu -)
+ */
+export function formatMstForDomain(taxCode, domain) {
+  const raw = normalizeMst(taxCode);
+  const digits = mstDigits(raw);
+  const d = String(domain || "").toLowerCase();
+  const isAppLike = d.includes(".minvoice.app") || d.includes(".minvoice.site");
+  const isComVn = d.includes(".minvoice.com.vn");
+
+  if (digits.length === 13) {
+    if (isAppLike) return `${digits.slice(0, 10)}-${digits.slice(10)}`;
+    if (isComVn) return digits;
+  }
+
+  if (isComVn) return digits || raw.replace(/-/g, "");
+  return raw;
+}
+
 function getValueByPriority(row, candidates) {
   for (const key of candidates) {
     if (row[key] !== undefined && row[key] !== null && row[key] !== "") {
@@ -55,8 +82,10 @@ export function parseMstListFromExcelRows(jsonData) {
       raw = row[Object.keys(row)[0]];
     }
     const mst = normalizeMst(raw);
-    if (!mst || seen.has(mst)) continue;
-    seen.add(mst);
+    if (!mst) continue;
+    const key = mstDigits(mst) || mst;
+    if (seen.has(key)) continue;
+    seen.add(key);
     list.push(mst);
   }
   return list;
@@ -66,7 +95,8 @@ export function parseMstListFromExcelRows(jsonData) {
 export function getCandidateDomains(taxCode) {
   const tax = normalizeMst(taxCode);
   if (!tax) return [];
-  if (tax.endsWith("-998")) {
+  const digits = mstDigits(tax);
+  if (tax.endsWith("-998") || digits.endsWith("998")) {
     return [".minvoice.site", ".minvoice.com.vn"];
   }
   return [".minvoice.app", ".minvoice.com.vn"];
@@ -105,7 +135,7 @@ function isSeriesC26(khhdon) {
  * GET GetTypeInvoiceSeries trên 1 domain.
  */
 export async function fetchInvoiceSeries(taxCode, domain, authToken) {
-  const tax = normalizeMst(taxCode);
+  const tax = formatMstForDomain(taxCode, domain);
   const url = `https://${tax}${domain}/api/InvoiceApi78/GetTypeInvoiceSeries`;
   const response = await axios.get(url, {
     headers: {
@@ -170,7 +200,7 @@ export async function hasInvoicesInRange(
   { tuNgay, denngay },
   authToken,
 ) {
-  const tax = normalizeMst(taxCode);
+  const tax = formatMstForDomain(taxCode, domain);
   const url = `https://${tax}${domain}/api/InvoiceApi78/GetInvoices`;
   const body = {
     tuNgay,

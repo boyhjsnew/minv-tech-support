@@ -26,6 +26,8 @@ import GdtTaxStatusLookup from "./page/GdtTaxStatusLookup";
 import CheckMessageMvanLookup from "./page/CheckMessageMvanLookup";
 import CreateUnitBulk from "./page/CreateUnitBulk";
 import InvoiceActivityLookup from "./page/InvoiceActivityLookup";
+import ExcelOrderMapping from "./page/ExcelOrderMapping";
+import XmlInvoiceImport from "./page/XmlInvoiceImport";
 import RepxImageExtractor from "./page/RepxImageExtractor";
 
 const Layout = () => {
@@ -116,6 +118,14 @@ const router = createBrowserRouter([
       {
         path: "/tra-cuu-hoat-dong-hoa-don",
         element: <InvoiceActivityLookup />,
+      },
+      {
+        path: "/mapping-cot-excel",
+        element: <ExcelOrderMapping />,
+      },
+      {
+        path: "/tach-xml-hoa-don",
+        element: <XmlInvoiceImport />,
       },
       {
         path: "/doc-file-repx",

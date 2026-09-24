@@ -53,4 +53,16 @@ export const MenuItems = [
     cName: "dropdown-link",
     icon: "icon-sub fa-regular fa-circle",
   },
+  {
+    title: "Mapping cột Excel (Mã đơn hàng)",
+    path: "/mapping-cot-excel",
+    cName: "dropdown-link",
+    icon: "icon-sub fa-regular fa-circle",
+  },
+  {
+    title: "Tách XML hoá đơn → Save",
+    path: "/tach-xml-hoa-don",
+    cName: "dropdown-link",
+    icon: "icon-sub fa-regular fa-circle",
+  },
 ];

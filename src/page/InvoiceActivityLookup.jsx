@@ -170,6 +170,9 @@ function InvoiceActivityLookup() {
         <code>.minvoice.app</code> / <code>.minvoice.com.vn</code>.
       </p>
       <p style={{ color: "#666", marginBottom: "20px", fontSize: "13px" }}>
+        MST 13 số: <code>.app</code> dùng dạng{" "}
+        <code>0313466783-004</code>, <code>.com.vn</code> dùng{" "}
+        <code>0313466783004</code> (tự bỏ dấu <code>-</code>).{" "}
         <strong>Hoạt động hoá đơn = Có</strong> khi có ký hiệu C26 và đã xuất
         hoá đơn trong 3 tháng gần nhất.{" "}
         <strong>Phiên bản:</strong> .app có HĐ → 2.0, .com.vn có HĐ → 1.0.

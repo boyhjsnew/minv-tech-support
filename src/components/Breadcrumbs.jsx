@@ -11,6 +11,8 @@ const breadcrumbLabels = {
   "/tra-cuu-thong-diep": "Tra cứu thông điệp MVAN",
   "/tao-don-vi-tinh": "Tạo đơn vị tính hàng loạt",
   "/tra-cuu-hoat-dong-hoa-don": "Tra cứu hoạt động hoá đơn",
+  "/mapping-cot-excel": "Mapping cột Excel (Mã đơn hàng)",
+  "/tach-xml-hoa-don": "Tách XML hoá đơn → Save",
   "/branchreport": "Báo cáo chi nhánh",
   "/systemreport": "Báo cáo toàn hệ thống",
   "/xoa-cache-ky": "Gửi mail hàng loạt VPĐKĐĐ",
