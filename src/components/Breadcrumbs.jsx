@@ -13,6 +13,8 @@ const breadcrumbLabels = {
   "/tra-cuu-hoat-dong-hoa-don": "Tra cứu hoạt động hoá đơn",
   "/mapping-cot-excel": "Mapping cột Excel (Mã đơn hàng)",
   "/tach-xml-hoa-don": "Tách XML hoá đơn → Save",
+  "/ky-hoa-don-hang-loat": "Ký hóa đơn hàng loạt",
+  "/copy-cau-hinh-dac-thu-1-0": "Copy cấu hình đặc thù 1.0",
   "/branchreport": "Báo cáo chi nhánh",
   "/systemreport": "Báo cáo toàn hệ thống",
   "/xoa-cache-ky": "Gửi mail hàng loạt VPĐKĐĐ",

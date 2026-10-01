@@ -137,7 +137,9 @@ const NavBar = () => {
               getLocation.pathname === "/tao-don-vi-tinh" ||
               getLocation.pathname === "/tra-cuu-hoat-dong-hoa-don" ||
               getLocation.pathname === "/mapping-cot-excel" ||
-              getLocation.pathname === "/tach-xml-hoa-don"
+              getLocation.pathname === "/tach-xml-hoa-don" ||
+              getLocation.pathname === "/ky-hoa-don-hang-loat" ||
+              getLocation.pathname === "/copy-cau-hinh-dac-thu-1-0"
                 ? "active"
                 : ""
             }

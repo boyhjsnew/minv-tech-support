@@ -55,7 +55,13 @@ function getValueByPriority(row, candidates) {
 }
 
 export function normalizeTaxCode(taxCode) {
+  // Giữ dạng chi nhánh có dấu -: 0316612746-002
   return (taxCode || "").toString().trim().replace(/\s+/g, "");
+}
+
+/** Bỏ dấu - khi cần (vd một số API/domain): 0316612746-002 → 0316612746002 */
+export function taxCodeWithoutDash(taxCode) {
+  return normalizeTaxCode(taxCode).replace(/-/g, "");
 }
 
 export function buildNetBaseUrl(taxCode) {
@@ -207,7 +213,14 @@ export function openNetLoginAndListenCookies(taxCode, onCookies) {
 }
 
 export function getStoredCookies(taxCode) {
-  return getCookiesFromStorage(normalizeTaxCode(taxCode)) || "";
+  const tax = normalizeTaxCode(taxCode);
+  if (!tax) return "";
+  // Thử đúng key MST user nhập (có thể có dấu -), rồi fallback bản bỏ dấu -
+  return (
+    getCookiesFromStorage(tax) ||
+    getCookiesFromStorage(taxCodeWithoutDash(tax)) ||
+    ""
+  );
 }
 
 export function buildCreateUnitHeaders(

@@ -10,6 +10,15 @@ import GetTokenCRM from "../Utils/GetTokenCRM";
 import ResetPasswordNewApp from "../Utils/ResetPasswordNewApp";
 import { Dropdown } from "primereact/dropdown";
 import { MultiSelect } from "primereact/multiselect";
+import {
+  extractXsrfTokenFromCookieString,
+  getStoredCookies,
+  normalizeTaxCode,
+} from "../Utils/CreateUnitBulk";
+import {
+  fetchCounterStatusInvoice,
+  pickSerialsFromCounter,
+} from "../Utils/BulkInvoiceSign";
 
 // Ẩn chức năng xoá chứng từ TNCN (đặt true để hiện lại)
 const SHOW_TNCN_DELETE = false;
@@ -120,25 +129,6 @@ function formatDateToDdMmYyyy(value) {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function extractXsrfTokenFromCookieString(cookieString) {
-  const source = (cookieString || "").toString();
-  if (!source) return "";
-  const parts = source.split(";");
-  for (const part of parts) {
-    const trimmed = part.trim();
-    if (!trimmed) continue;
-    const [name, ...rest] = trimmed.split("=");
-    if ((name || "").trim() !== "XSRF-TOKEN") continue;
-    const raw = rest.join("=").trim();
-    try {
-      return decodeURIComponent(raw);
-    } catch {
-      return raw;
-    }
-  }
-  return "";
 }
 
 async function retryAxiosPost(url, data, config, maxAttempts = 3) {
@@ -278,10 +268,10 @@ const Support = () => {
     loai_doanh_nghiep: "",
   };
 
-  /** Trạng thái gửi CQT khi lấy danh sách kiểm tra hàng loạt: 2 (đã ký), 3 (đang gửi) — khớp filter trên web 2.0 */
+  /** Trạng thái gửi CQT khi lấy HĐ kiểm tra: 2 = đã ký, 3 = đang gửi */
   const CHECK_SENDING_TAX_STATUSES = "2,3";
   const bulkOriginalLoginUrl = useMemo(() => {
-    const tax = (bulkOriginalTaxCode || "").trim().replace(/-/g, "");
+    const tax = normalizeTaxCode(bulkOriginalTaxCode);
     return tax ? `https://${tax}.minvoice.net/#/` : "";
   }, [bulkOriginalTaxCode]);
 
@@ -1782,7 +1772,7 @@ const Support = () => {
 
   // --- Kiểm tra đang gửi hàng loạt: lấy tài khoản 2.0 và mở link đăng nhập
   const handleGetAccount20 = async () => {
-    const tax = (checkTaxCode || "").trim().replace(/-/g, "");
+    const tax = normalizeTaxCode(checkTaxCode);
     if (!tax) {
       toast.error(
         <ToastNotify status={-1} message="Vui lòng nhập mã số thuế" />,
@@ -1840,6 +1830,7 @@ const Support = () => {
         );
         return;
       }
+      // CRM / ResetPassword: giữ MST có dấu - nếu user nhập (vd 0316612746-002)
       const tokenNewApp = await ResetPasswordNewApp(tax, tokenCrmRes.token);
       if (!tokenNewApp?.token?.data) {
         toast.error(
@@ -1854,13 +1845,15 @@ const Support = () => {
       const account = tokenNewApp.token.data.account;
       const password = tokenNewApp.token.data.passWord;
       setCheckAccount20({ account, password });
+      setCheckTaxCode(tax);
       const newWindow = window.open(`https://${tax}.minvoice.net/#/`, "_blank");
       // Cơ chế như InsertCKS: lắng nghe postMessage từ trang 2.0 để lưu cookie (khi user đăng nhập xong chạy script trên trang 2.0)
       if (newWindow) {
         const messageHandler = (event) => {
           if (
             event.data?.type === "COOKIES_SAVED" &&
-            event.data?.taxCode === tax
+            event.data?.taxCode === tax &&
+            event.data?.cookies
           ) {
             const cookies = event.data.cookies;
             if (cookies) {
@@ -1880,7 +1873,7 @@ const Support = () => {
       toast.success(
         <ToastNotify
           status={0}
-          message="Đã lấy tài khoản 2.0 và mở link đăng nhập. Đăng nhập xong quay lại, bấm Lấy danh sách ký hiệu rồi chọn tờ khai."
+          message="Đã lấy tài khoản 2.0 và mở link đăng nhập. Đăng nhập xong quay lại, bấm Lấy ký hiệu (đã ký / đang gửi)."
         />,
         { style: styleSuccess },
       );
@@ -1898,10 +1891,10 @@ const Support = () => {
     }
   };
 
-  // --- Kiểm tra đang gửi hàng loạt: lấy danh sách ký hiệu bằng API GetTypeInvoiceSeries (cùng hàm get series)
+  // --- Kiểm tra hàng loạt: lấy ký hiệu có signed > 0 hoặc sending > 0 từ counter
   const handleFetchCheckRegisterList = async () => {
-    const taxCodeInput = (checkTaxCode || "").trim();
-    if (!taxCodeInput) {
+    const tax = normalizeTaxCode(checkTaxCode);
+    if (!tax) {
       toast.error(
         <ToastNotify status={-1} message="Vui lòng nhập mã số thuế" />,
         { style: styleError },
@@ -1911,68 +1904,50 @@ const Support = () => {
     setLoadingCheckRegisterList(true);
     setCheckRegisterList([]);
     setCheckRegisterInvoiceIds([]);
-    const domain = taxCodeInput.endsWith("-998")
-      ? ".minvoice.site"
-      : ".minvoice.app";
-    const url = `https://${taxCodeInput}${domain}/api/InvoiceApi78/GetTypeInvoiceSeries`;
-    const headers = {
-      Authorization: invoiceApi78AuthorizationFromInput(invoiceApi78Token, {
-        forSeries: true,
-      }),
-      "Content-Type": "application/json",
-    };
     try {
-      const response = await axios.get(url, { headers });
-      if (
-        response?.data?.code === "00" &&
-        Array.isArray(response?.data?.data)
-      ) {
-        const data = response.data.data;
-        const list = data
-          .map((s) => ({
-            id: s.id,
-            name: s.khhdon
-              ? `${s.khhdon}${s.invoiceTypeName ? " - " + s.invoiceTypeName : ""}`
-              : s.invoiceTypeName || s.id,
-          }))
-          .filter((s) => s.id);
-        setCheckRegisterList(list);
-        if (list.length === 0) {
-          toast.warning(
-            <ToastNotify status={1} message="Không tìm thấy ký hiệu nào" />,
-            { style: styleError },
-          );
-        } else {
-          toast.success(
-            <ToastNotify
-              status={0}
-              message={`Đã lấy ${list.length} ký hiệu`}
-            />,
-            { style: styleSuccess },
-          );
-        }
+      const cookies = getStoredCookies(tax);
+      const xsrf = extractXsrfTokenFromCookieString(cookies);
+      const counter = await fetchCounterStatusInvoice({
+        taxCode: tax,
+        cookieString: cookies,
+        requestVerificationToken: xsrf,
+      });
+      const checkList = pickSerialsFromCounter(counter.details, "check");
+      const list = checkList.map((s) => ({
+        id: s.invoiceSerial,
+        name: `${s.invoiceSerial} — đã ký: ${s.signed} · đang gửi: ${s.sending}`,
+        invoiceSerial: s.invoiceSerial,
+        sending: s.sending,
+        waitSign: s.waitSign,
+        signed: s.signed,
+      }));
+      setCheckRegisterList(list);
+      // Không tự chọn hết — để user chọn nếu muốn
+      setCheckRegisterInvoiceIds([]);
+      if (list.length === 0) {
+        toast.warning(
+          <ToastNotify
+            status={1}
+            message={`Không có ký hiệu đã ký/đang gửi. Chờ ký: ${counter.totalWaitSign}`}
+          />,
+          { style: styleError },
+        );
       } else {
-        const p = response?.data;
-        if (isInvoiceApi78TokenError(p)) {
-          toast.error(
-            <ToastNotify
-              status={-1}
-              message={`${p?.message || "Token hết hạn"}. Nhập Token InvoiceApi78 (tab Cập nhật HĐ lỗi / Cập nhật hàng loạt) rồi thử lại.`}
-            />,
-            { style: styleError },
-          );
-        }
-        throw new Error(p?.message || "Không thể lấy danh sách ký hiệu");
+        toast.success(
+          <ToastNotify
+            status={0}
+            message={`${list.length} ký hiệu sẵn sàng — hãy chọn ký hiệu cần kiểm tra (hoặc Chọn tất cả)`}
+          />,
+          { style: styleSuccess },
+        );
       }
     } catch (err) {
       console.error(err);
-      const errData = err?.response?.data;
-      const tokenHint = isInvoiceApi78TokenError(errData)
-        ? " Nhập Token InvoiceApi78 rồi thử lại."
-        : "";
       const msg =
-        (errData?.message || err?.message || "Lỗi khi lấy danh sách ký hiệu") +
-        tokenHint;
+        err?.response?.data?.error?.message ||
+        err?.response?.data?.message ||
+        err?.message ||
+        "Lỗi khi lấy counter-status-invoice — kiểm tra đã đăng nhập .net chưa";
       toast.error(<ToastNotify status={-1} message={msg} />, {
         style: styleError,
       });
@@ -1981,10 +1956,10 @@ const Support = () => {
     }
   };
 
-  // --- Kiểm tra đang gửi hàng loạt: lấy danh sách hóa đơn sendTaxStatus=2,3 (đã ký + đang gửi CQT)
+  // --- Kiểm tra đang gửi: lấy HĐ sendTaxStatus=3 theo invoiceSerial
   const handleFetchSendingList = async () => {
-    const tax = (checkTaxCode || "").trim().replace(/-/g, "");
-    const regIds = (checkRegisterInvoiceIds || [])
+    const tax = normalizeTaxCode(checkTaxCode);
+    const serials = (checkRegisterInvoiceIds || [])
       .map((id) => String(id || "").trim())
       .filter(Boolean);
     if (!tax) {
@@ -1994,11 +1969,11 @@ const Support = () => {
       );
       return;
     }
-    if (!regIds.length) {
+    if (!serials.length) {
       toast.error(
         <ToastNotify
           status={-1}
-          message="Vui lòng chọn ít nhất 1 ký hiệu (tờ khai đăng ký)"
+          message="Vui lòng lấy & chọn ít nhất 1 ký hiệu (đã ký / đang gửi)"
         />,
         { style: styleError },
       );
@@ -2009,39 +1984,33 @@ const Support = () => {
     setCheckResults([]);
     const baseUrl = `https://${tax}.minvoice.net`;
     const PAGE_SIZE = 50;
+    const xsrf = extractXsrfTokenFromCookieString(getStoredCookies(tax));
     const headers = {
       Accept: "application/json, text/plain, */*",
-      "Accept-Language":
-        "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7,fr-FR;q=0.6,fr;q=0.5",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
-      Pragma: "no-cache",
+      "Accept-Language": "vi",
+      "X-Culture": "vi",
       Referer: `${baseUrl}/`,
-      "Sec-Fetch-Dest": "empty",
-      "Sec-Fetch-Mode": "cors",
-      "Sec-Fetch-Site": "same-origin",
-      "User-Agent":
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
-      "sec-ch-ua":
-        '"Not:A-Brand";v="99", "Google Chrome";v="145", "Chromium";v="145"',
-      "sec-ch-ua-mobile": "?0",
-      "sec-ch-ua-platform": '"macOS"',
+      "Content-Type": "application/json",
     };
+    if (xsrf) headers.RequestVerificationToken = xsrf;
     try {
       let allItems = [];
       const seenIds = new Set();
 
-      for (let r = 0; r < regIds.length; r += 1) {
-        const regId = regIds[r];
+      for (let r = 0; r < serials.length; r += 1) {
+        const serial = serials[r];
         let skipCount = 0;
         let totalCount = null;
         do {
-          const url = `${baseUrl}/api/api/app/invoice?maxResultCount=${PAGE_SIZE}&skipCount=${skipCount}&sendTaxStatus=${CHECK_SENDING_TAX_STATUSES}&registerInvoiceId=${encodeURIComponent(regId)}&loadAll=false`;
+          const url = `${baseUrl}/api/api/app/invoice?maxResultCount=${PAGE_SIZE}&skipCount=${skipCount}&sendTaxStatus=${CHECK_SENDING_TAX_STATUSES}&invoiceSerial=${encodeURIComponent(serial)}&loadAll=false`;
           const res = await axios.get(url, { headers, withCredentials: true });
           const data = res.data;
           const items = Array.isArray(data.items) ? data.items : [];
           for (const item of items) {
-            const key = item?.id || item?.invoiceId || `${regId}-${item?.invoiceNumber}-${item?.invoiceSerial}`;
+            const key =
+              item?.id ||
+              item?.invoiceId ||
+              `${serial}-${item?.invoiceNumber}-${item?.invoiceSerial}`;
             if (seenIds.has(key)) continue;
             seenIds.add(key);
             allItems.push(item);
@@ -2058,7 +2027,7 @@ const Support = () => {
       toast.success(
         <ToastNotify
           status={0}
-          message={`Đã lấy ${allItems.length} hóa đơn từ ${regIds.length} ký hiệu (gửi CQT: đã ký + đang gửi, sendTaxStatus=${CHECK_SENDING_TAX_STATUSES})`}
+          message={`Đã lấy ${allItems.length} HĐ từ ${serials.length} ký hiệu (đã ký + đang gửi)`}
         />,
         { style: styleSuccess },
       );
@@ -2088,7 +2057,7 @@ const Support = () => {
       );
       return;
     }
-    const tax = (checkTaxCode || "").trim().replace(/-/g, "");
+    const tax = normalizeTaxCode(checkTaxCode);
     if (!tax) {
       toast.error(
         <ToastNotify status={-1} message="Vui lòng nhập mã số thuế" />,
@@ -2160,15 +2129,14 @@ const Support = () => {
 
   // --- Cập nhật hóa đơn gốc hàng loạt: lọc bị thay thế -> detail -> check CQT (retry) -> update trạng thái gốc
   const handleBulkUpdateOriginalInvoices = async () => {
-    const taxRaw = (bulkOriginalTaxCode || "").trim();
-    const tax = taxRaw.replace(/-/g, "");
+    const tax = normalizeTaxCode(bulkOriginalTaxCode);
     const tenantBaseUrl = `https://${tax}.minvoice.net`;
     const selectedRegister = seriesList.find(
       (s) => s.khhdon === selectedSeries,
     );
     const registerInvoiceId = selectedRegister?.id;
 
-    if (!taxRaw) {
+    if (!tax) {
       toast.error(
         <ToastNotify status={-1} message="Vui lòng nhập mã số thuế" />,
         { style: styleError },
@@ -2708,11 +2676,10 @@ const Support = () => {
         <div style={{ padding: "20px" }}>
           <h1 style={{ marginBottom: "20px" }}>Kiểm tra đang gửi hàng loạt</h1>
           <p style={{ marginBottom: "16px", color: "#666", fontSize: "14px" }}>
-            Lấy tài khoản 2.0 và mở link đăng nhập → đăng nhập trên trang 2.0
-            (cookie/session lấy theo link đó) → Lấy danh sách ký hiệu và chọn
-            một hoặc nhiều tờ khai đăng ký → Lấy danh sách hóa đơn{" "}
-            <strong>đã ký</strong> và <strong>đang gửi CQT</strong> (
-            <code>sendTaxStatus=2,3</code>) → Kiểm tra hàng loạt qua m-gate-way.
+            Đăng nhập <code>.minvoice.net</code> → lấy ký hiệu có{" "}
+            <strong>đã ký</strong> / <strong>đang gửi</strong> (
+            <code>counter-status-invoice</code>: <code>signed</code> hoặc{" "}
+            <code>sending &gt; 0</code>) → lấy HĐ → kiểm tra m-gate-way.
           </p>
           <div
             style={{
@@ -2738,7 +2705,7 @@ const Support = () => {
                 type="text"
                 value={checkTaxCode}
                 onChange={(e) => setCheckTaxCode(e.target.value)}
-                placeholder="VD: 3700143591"
+                placeholder="VD: 0316612746 hoặc 0316612746-002"
                 style={{
                   width: "100%",
                   padding: "8px",
@@ -2747,6 +2714,19 @@ const Support = () => {
                   fontSize: "14px",
                 }}
               />
+              {normalizeTaxCode(checkTaxCode).includes("-") ? (
+                <small
+                  style={{
+                    display: "block",
+                    marginTop: 4,
+                    color: "#666",
+                    fontSize: 12,
+                  }}
+                >
+                  Giữ MST có dấu -:{" "}
+                  <code>{normalizeTaxCode(checkTaxCode)}.minvoice.net</code>
+                </small>
+              ) : null}
             </div>
             <div style={{ marginBottom: "12px" }}>
               <button
@@ -2786,7 +2766,7 @@ const Support = () => {
                   fontSize: "14px",
                 }}
               >
-                Ký hiệu (tờ khai đăng ký) — chọn nhiều
+                Ký hiệu đã ký / đang gửi — chọn nếu muốn
               </label>
               <div
                 style={{
@@ -2818,8 +2798,8 @@ const Support = () => {
                   }}
                 >
                   {loadingCheckRegisterList
-                    ? "Đang tải..."
-                    : "Lấy danh sách ký hiệu"}
+                    ? "Đang lấy..."
+                    : "Lấy ký hiệu (đã ký / đang gửi)"}
                 </button>
                 {checkRegisterList.length > 0 && (
                   <>
@@ -2874,17 +2854,17 @@ const Support = () => {
                   optionValue="value"
                   placeholder={
                     checkRegisterList.length === 0
-                      ? "Lấy danh sách ký hiệu trước..."
-                      : "Chọn một hoặc nhiều ký hiệu..."
+                      ? "Bấm Lấy ký hiệu (đã ký / đang gửi)…"
+                      : "Chọn ký hiệu…"
                   }
                   filter
                   filterBy="label,value"
-                  filterPlaceholder="Tìm theo tên ký hiệu hoặc ID..."
+                  filterPlaceholder="Tìm ký hiệu…"
                   display="chip"
                   showClear
                   showSelectAll
                   selectAllLabel="Chọn tất cả"
-                  emptyMessage="Chưa có dữ liệu — bấm “Lấy danh sách ký hiệu”"
+                  emptyMessage="Chưa có ký hiệu đã ký / đang gửi"
                   emptyFilterMessage="Không tìm thấy ký hiệu phù hợp"
                   disabled={
                     checkRegisterList.length === 0 || loadingCheckRegisterList
@@ -2906,8 +2886,8 @@ const Support = () => {
                   >
                     Đã chọn{" "}
                     <strong>{checkRegisterInvoiceIds.length}</strong> /{" "}
-                    {checkRegisterList.length} ký hiệu. Có thể tích nhiều hoặc
-                    dùng “Chọn tất cả”.
+                    {checkRegisterList.length} ký hiệu. Chọn trong dropdown
+                    hoặc bấm “Chọn tất cả” / “Bỏ chọn”.
                   </small>
                 )}
               </div>
@@ -2937,7 +2917,7 @@ const Support = () => {
               >
                 {loadingCheckList
                   ? "Đang lấy danh sách..."
-                  : "Lấy danh sách (đã ký + đang gửi CQT)"}
+                  : "Lấy danh sách HĐ (đã ký + đang gửi)"}
               </button>
               <button
                 type="button"
@@ -2970,7 +2950,7 @@ const Support = () => {
                 style={{ marginTop: "16px", fontSize: "13px", color: "#333" }}
               >
                 Đã lấy <strong>{checkInvoiceList.length}</strong> hóa đơn
-                (sendTaxStatus 2 = đã ký, 3 = đang gửi CQT).
+                (sendTaxStatus 2 = đã ký, 3 = đang gửi).
               </div>
             )}
             {checkResults.length > 0 && (

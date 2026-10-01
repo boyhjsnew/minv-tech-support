@@ -65,4 +65,16 @@ export const MenuItems = [
     cName: "dropdown-link",
     icon: "icon-sub fa-regular fa-circle",
   },
+  {
+    title: "Ký hóa đơn hàng loạt",
+    path: "/ky-hoa-don-hang-loat",
+    cName: "dropdown-link",
+    icon: "icon-sub fa-regular fa-circle",
+  },
+  {
+    title: "Copy cấu hình đặc thù 1.0",
+    path: "/copy-cau-hinh-dac-thu-1-0",
+    cName: "dropdown-link",
+    icon: "icon-sub fa-regular fa-circle",
+  },
 ];

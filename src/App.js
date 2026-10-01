@@ -29,6 +29,8 @@ import InvoiceActivityLookup from "./page/InvoiceActivityLookup";
 import ExcelOrderMapping from "./page/ExcelOrderMapping";
 import XmlInvoiceImport from "./page/XmlInvoiceImport";
 import RepxImageExtractor from "./page/RepxImageExtractor";
+import BulkInvoiceSign from "./page/BulkInvoiceSign";
+import CopySpecialConfig10 from "./page/CopySpecialConfig10";
 
 const Layout = () => {
   const location = useLocation();
@@ -43,6 +45,9 @@ const Layout = () => {
       "/chuyen-to-khai",
       "/xoa-cache-ky",
       "/update-hoa-don",
+      "/ky-hoa-don-hang-loat",
+      "/tao-don-vi-tinh",
+      "/copy-cau-hinh-dac-thu-1-0",
     ];
 
     // Kiểm tra nếu route hiện tại cần đăng nhập CRM
@@ -126,6 +131,14 @@ const router = createBrowserRouter([
       {
         path: "/tach-xml-hoa-don",
         element: <XmlInvoiceImport />,
+      },
+      {
+        path: "/ky-hoa-don-hang-loat",
+        element: <BulkInvoiceSign />,
+      },
+      {
+        path: "/copy-cau-hinh-dac-thu-1-0",
+        element: <CopySpecialConfig10 />,
       },
       {
         path: "/doc-file-repx",
