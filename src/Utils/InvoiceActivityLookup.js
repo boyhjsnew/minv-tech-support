@@ -131,6 +131,14 @@ function buildAuthHeader(userToken) {
   return `Bear ${t}`;
 }
 
+function getInvoiceSeriesController(domain) {
+  return String(domain || "")
+    .toLowerCase()
+    .includes(".minvoice.com.vn")
+    ? "Invoice68"
+    : "InvoiceApi78";
+}
+
 /** Chỉ nhận ký hiệu có C26 (1C26__, 2C26__, …); còn lại bỏ qua. */
 function isSeriesC26(khhdon) {
   const s = String(khhdon || "").trim().toUpperCase();
@@ -142,7 +150,8 @@ function isSeriesC26(khhdon) {
  */
 export async function fetchInvoiceSeries(taxCode, domain, authToken) {
   const tax = formatMstForDomain(taxCode, domain);
-  const url = `https://${tax}${domain}/api/InvoiceApi78/GetTypeInvoiceSeries`;
+  const controller = getInvoiceSeriesController(domain);
+  const url = `https://${tax}${domain}/api/${controller}/GetTypeInvoiceSeries`;
   const response = await axios.get(url, {
     headers: {
       Authorization: buildAuthHeader(authToken),

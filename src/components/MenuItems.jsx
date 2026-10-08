@@ -54,6 +54,12 @@ export const MenuItems = [
     icon: "icon-sub fa-regular fa-circle",
   },
   {
+    title: "Tra cứu email/SĐT tờ khai",
+    path: "/tra-cuu-lien-he-to-khai",
+    cName: "dropdown-link",
+    icon: "icon-sub fa-regular fa-circle",
+  },
+  {
     title: "Mapping cột Excel (Mã đơn hàng)",
     path: "/mapping-cot-excel",
     cName: "dropdown-link",

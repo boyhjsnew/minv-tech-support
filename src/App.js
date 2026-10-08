@@ -31,6 +31,7 @@ import XmlInvoiceImport from "./page/XmlInvoiceImport";
 import RepxImageExtractor from "./page/RepxImageExtractor";
 import BulkInvoiceSign from "./page/BulkInvoiceSign";
 import CopySpecialConfig10 from "./page/CopySpecialConfig10";
+import DeclarationContactLookup from "./page/DeclarationContactLookup";
 
 const Layout = () => {
   const location = useLocation();
@@ -123,6 +124,10 @@ const router = createBrowserRouter([
       {
         path: "/tra-cuu-hoat-dong-hoa-don",
         element: <InvoiceActivityLookup />,
+      },
+      {
+        path: "/tra-cuu-lien-he-to-khai",
+        element: <DeclarationContactLookup />,
       },
       {
         path: "/mapping-cot-excel",
