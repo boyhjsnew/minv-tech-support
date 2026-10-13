@@ -1,6 +1,7 @@
 import React, { useRef, useState } from "react";
 import { getPatternList } from "../Utils/GetPatternList";
 import { extractRepxFromFile } from "../Utils/repx/extractRepx";
+import { patchRepxQhnsCccdFile } from "../Utils/repx/patchQhnsCccd";
 
 const REPX_FEATURES = [
   { value: "extract-images", label: "Đọc ảnh / logo nhúng" },
@@ -33,6 +34,7 @@ function RepxImageExtractor() {
   const [patternStart, setPatternStart] = useState(0);
   const [addingId, setAddingId] = useState(null);
   const [addMessage, setAddMessage] = useState("");
+  const [patchedFile, setPatchedFile] = useState(null);
 
   const handleFileChange = async (event) => {
     const file = event.target.files?.[0];
@@ -80,6 +82,54 @@ function RepxImageExtractor() {
     }
   };
 
+  const handleQhnsFile = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.toLowerCase().endsWith(".repx")) {
+      setError("Vui lòng chọn file .repx");
+      return;
+    }
+
+    setFileName(file.name);
+    setLoading(true);
+    setError("");
+    setAddMessage("");
+    setPatchedFile(null);
+
+    try {
+      const patched = await patchRepxQhnsCccdFile(file);
+      const blob = new Blob([patched.text], { type: "application/octet-stream" });
+      setPatchedFile({
+        url: URL.createObjectURL(blob),
+        fileName: patched.fileName,
+        schemaFields: patched.schemaFields,
+        layoutFields: patched.layoutFields,
+        alreadyHadLayout: patched.alreadyHadLayout,
+      });
+      if (!patched.schemaFields.length && patched.alreadyHadLayout) {
+        setAddMessage("File đã có CCCD, mã QHNS và schema. Không cần sửa thêm.");
+      } else {
+        const added = [];
+        if (patched.layoutFields.includes("NMua.CCCDan")) added.push("CCCD");
+        if (patched.layoutFields.includes("NMua.MDVQHNSach")) {
+          added.push("mã QHNS");
+        }
+        if (patched.schemaFields.length) added.push("schema");
+        setAddMessage(
+          added.length
+            ? `Đã thêm ${added.join(", ")}. Tải file REPX bên dưới.`
+            : "Đã xử lý file REPX.",
+        );
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Không sửa được file REPX.");
+    } finally {
+      setLoading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
   const handleAddPattern = async (item) => {
     setAddingId(item.id);
     setAddMessage("");
@@ -109,7 +159,7 @@ function RepxImageExtractor() {
       <h2 style={{ marginBottom: "8px" }}>Xử lý REPX 1.0</h2>
       <p style={{ color: "#666", marginBottom: "20px", fontSize: "14px" }}>
         {isQhnsFeature
-          ? "Nhập MST để lấy danh sách mẫu hóa đơn, sau đó bấm Thêm trên từng mẫu cần bổ sung QHNS & CCCD."
+          ? "Chọn file .repx. Hệ thống thêm CCCD, mã đơn vị quan hệ ngân sách và schema, rồi tải file đã sửa."
           : "Chọn file .repx để trích xuất logo/ảnh nhúng."}
       </p>
 
@@ -133,6 +183,7 @@ function RepxImageExtractor() {
             setError("");
             setResult(null);
             setAddMessage("");
+            setPatchedFile(null);
             setPatterns([]);
             setPatternTotal(0);
           }}
@@ -157,6 +208,64 @@ function RepxImageExtractor() {
 
       {isQhnsFeature ? (
         <div style={{ marginBottom: "20px" }}>
+          <div
+            style={{
+              border: "2px dashed #ccc",
+              borderRadius: "8px",
+              padding: "24px",
+              textAlign: "center",
+              backgroundColor: "#fafafa",
+              marginBottom: "16px",
+            }}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".repx"
+              onChange={handleQhnsFile}
+              disabled={loading}
+              style={{ display: "none" }}
+              id="repx-qhns-input"
+            />
+            <label
+              htmlFor="repx-qhns-input"
+              style={{
+                display: "inline-block",
+                padding: "10px 20px",
+                backgroundColor: loading ? "#ccc" : "#007bff",
+                color: "white",
+                borderRadius: "4px",
+                cursor: loading ? "not-allowed" : "pointer",
+                fontWeight: "bold",
+              }}
+            >
+              {loading ? "Đang xử lý..." : "Chọn file .repx"}
+            </label>
+            {fileName && (
+              <div style={{ marginTop: "10px", fontSize: "13px", color: "#333" }}>
+                File: {fileName}
+              </div>
+            )}
+            {patchedFile && (
+              <div style={{ marginTop: "14px" }}>
+                <a
+                  href={patchedFile.url}
+                  download={patchedFile.fileName}
+                  style={{
+                    display: "inline-block",
+                    padding: "10px 20px",
+                    backgroundColor: "#28a745",
+                    color: "white",
+                    borderRadius: "4px",
+                    fontWeight: "bold",
+                    textDecoration: "none",
+                  }}
+                >
+                  Tải {patchedFile.fileName}
+                </a>
+              </div>
+            )}
+          </div>
           <label
             htmlFor="repx-tax-code"
             style={{

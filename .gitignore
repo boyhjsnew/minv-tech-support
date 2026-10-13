@@ -23,6 +23,7 @@ out/
 .env.test.local
 .env.production.local
 backend/.env
+backend/dist/
 
 npm-debug.log*
 yarn-debug.log*

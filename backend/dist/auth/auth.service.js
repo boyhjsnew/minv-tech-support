@@ -272,23 +272,36 @@ let AuthService = AuthService_1 = class AuthService {
         const authorization = rawToken.startsWith('Bear ')
             ? rawToken
             : `Bear ${rawToken}`;
-        let response = await this.runStep('GET_OLD_APP_DECLARATION_ND70', taxCode, () => axios_1.default.post(`https://${hostTaxCode}.minvoice.com.vn/api/Pattern/GetData`, {
-            command: 'CM0006_70',
-            start: 0,
-            count: 50,
-            filter: [],
-            tlbparam: [],
-        }, {
-            timeout: 60000,
-            validateStatus: () => true,
-            headers: {
-                Accept: '*/*',
-                'Content-Type': 'application/json',
-                Authorization: authorization,
-                Origin: `https://${hostTaxCode}.minvoice.com.vn`,
-                Referer: `https://${hostTaxCode}.minvoice.com.vn/`,
-            },
-        }));
+        let response;
+        try {
+            response = await this.runStep('GET_OLD_APP_DECLARATION_ND70', taxCode, () => axios_1.default.post(`https://${hostTaxCode}.minvoice.com.vn/api/Pattern/GetData`, {
+                command: 'CM0006_70',
+                start: 0,
+                count: 50,
+                filter: [],
+                tlbparam: [],
+            }, {
+                timeout: 60000,
+                validateStatus: () => true,
+                headers: {
+                    Accept: '*/*',
+                    'Content-Type': 'application/json',
+                    Authorization: authorization,
+                    Origin: `https://${hostTaxCode}.minvoice.com.vn`,
+                    Referer: `https://${hostTaxCode}.minvoice.com.vn/`,
+                },
+            }));
+        }
+        catch (error) {
+            if (error instanceof Error &&
+                error.message.toUpperCase().includes('ENOTFOUND')) {
+                throw new AuthWorkflowError('INVOICE_NOT_IN_USE', `Mã số thuế ${taxCode} không sử dụng hóa đơn.`);
+            }
+            throw error;
+        }
+        if (this.isOldAppNotInUseResponse(response.status, response.data)) {
+            throw new AuthWorkflowError('INVOICE_NOT_IN_USE', `Mã số thuế ${taxCode} không sử dụng hóa đơn.`);
+        }
         if (response.status >= 400) {
             throw new AuthWorkflowError('GET_OLD_APP_DECLARATION_ND70', `Upstream HTTP ${response.status}: ${this.safeDetail(response.data)}`, response.status);
         }
@@ -317,6 +330,9 @@ let AuthService = AuthService_1 = class AuthService {
                     Referer: `https://${hostTaxCode}.minvoice.com.vn/`,
                 },
             }));
+            if (this.isOldAppNotInUseResponse(response.status, response.data)) {
+                throw new AuthWorkflowError('INVOICE_NOT_IN_USE', `Mã số thuế ${taxCode} không sử dụng hóa đơn.`);
+            }
             if (response.status >= 400) {
                 throw new AuthWorkflowError('GET_OLD_APP_DECLARATION_ND123', `Upstream HTTP ${response.status}: ${this.safeDetail(response.data)}`, response.status);
             }
@@ -603,6 +619,13 @@ let AuthService = AuthService_1 = class AuthService {
         return (text.includes('unauthorized') ||
             text.includes('token expired') ||
             text.includes('token hết hạn'));
+    }
+    isOldAppNotInUseResponse(status, data) {
+        if (status !== 500)
+            return false;
+        const text = this.safeDetail(data).toLowerCase();
+        return (text.includes("create a controller of type 'patterncontroller'") ||
+            text.includes('parameterless public constructor'));
     }
     async runStep(step, taxCode, action) {
         this.logger.log(`[${step}] taxCode=${taxCode} - bắt đầu`);

@@ -93,6 +93,7 @@ export declare class AuthService {
     private delay;
     private isExpiredSessionError;
     private isCrmAuthFailure;
+    private isOldAppNotInUseResponse;
     private runStep;
 }
 export {};
